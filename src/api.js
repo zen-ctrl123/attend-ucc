@@ -1,0 +1,118 @@
+const BASE_URL = "http://localhost:3001/api";
+
+function getToken() {
+  return localStorage.getItem("attenducc_token");
+}
+
+function authHeaders() {
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${getToken()}`,
+  };
+}
+async function handleResponse(res) {
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Something went wrong.");
+  return data;
+}
+
+export async function login(identifier, password, role) {
+  const res = await fetch(`${BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ identifier, password, role }),
+  });
+  const data = await handleResponse(res);
+  // Save token and user to localStorage
+  localStorage.setItem("attenducc_token", data.token);
+  localStorage.setItem("attenducc_user", JSON.stringify(data.user));
+  return data.user;
+}
+
+export async function register(formData) {
+  const res = await fetch(`${BASE_URL}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(formData),
+  });
+  return handleResponse(res);
+}
+
+export function logout() {
+  localStorage.removeItem("attenducc_token");
+  localStorage.removeItem("attenducc_user");
+}
+
+export function getSavedUser() {
+  const user = localStorage.getItem("attenducc_user");
+  return user ? JSON.parse(user) : null;
+}
+
+export async function getCourses() {
+  const res = await fetch(`${BASE_URL}/courses`, {
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function getTodaySessions() {
+  const res = await fetch(`${BASE_URL}/sessions/today`, {
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function createSession(course_id, room) {
+  const res = await fetch(`${BASE_URL}/sessions`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ course_id, room }),
+  });
+  return handleResponse(res);
+}
+
+export async function generateQR(sessionId) {
+  const res = await fetch(`${BASE_URL}/sessions/${sessionId}/qr`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function endSession(sessionId) {
+  const res = await fetch(`${BASE_URL}/sessions/${sessionId}/end`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function scanAttendance(qr_token, gps_lat, gps_lng, ip_address) {
+  const res = await fetch(`${BASE_URL}/attendance/scan`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ qr_token, gps_lat, gps_lng, ip_address }),
+  });
+  return handleResponse(res);
+}
+
+export async function getSessionAttendance(sessionId) {
+  const res = await fetch(`${BASE_URL}/attendance/session/${sessionId}`, {
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function getStudentAttendance() {
+  const res = await fetch(`${BASE_URL}/attendance/student`, {
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+export async function getCourseReport(courseId) {
+  const res = await fetch(`${BASE_URL}/attendance/course/${courseId}`, {
+    headers: authHeaders(),
+  });
+  return handleResponse(res);
+}

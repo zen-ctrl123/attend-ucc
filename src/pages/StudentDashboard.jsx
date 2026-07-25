@@ -1,0 +1,482 @@
+import { useState, useEffect, useRef } from "react";
+import { useAuth } from "../context/AuthContext";
+import { Html5QrcodeScanner } from "html5-qrcode";
+import { validateAttendance } from "../utils/locationValidator";
+import { scanAttendance } from "../api";
+import styles from "./Dashboard.module.css";
+
+/* ── Mock data ── */
+const COURSES = [
+  { id: 1, name: "Introduction to Programming",  code: "ITC 101", lecturer: "Dr. E. Tetteh",    attended: 11, total: 12, risk: false },
+  { id: 2, name: "Data Structures & Algorithms", code: "ITC 203", lecturer: "Prof. A. Boateng", attended:  9, total: 12, risk: false },
+  { id: 3, name: "Web Technologies",             code: "ITC 305", lecturer: "Dr. K. Asante",    attended:  7, total: 12, risk: true  },
+  { id: 4, name: "Database Management Systems",  code: "ITC 207", lecturer: "Dr. Y. Mensah",    attended: 10, total: 12, risk: false },
+];
+
+const HISTORY = [
+  { date: "Mon 14 Apr", course: "ITC 101", status: "present", time: "08:03" },
+  { date: "Mon 14 Apr", course: "ITC 203", status: "present", time: "10:06" },
+  { date: "Mon 14 Apr", course: "ITC 305", status: "absent",  time: "—"    },
+  { date: "Tue 15 Apr", course: "ITC 207", status: "present", time: "14:02" },
+  { date: "Wed 16 Apr", course: "ITC 101", status: "late",    time: "08:19" },
+  { date: "Wed 16 Apr", course: "ITC 203", status: "present", time: "10:01" },
+  { date: "Thu 17 Apr", course: "ITC 305", status: "absent",  time: "—"    },
+  { date: "Thu 17 Apr", course: "ITC 207", status: "present", time: "14:04" },
+];
+
+const ACTIVE_SESSION = { course: "Introduction to Programming", code: "ITC 101", room: "LT 3" };
+
+function initials(name) {
+  return name.split(" ").map(w => w[0]).slice(0, 2).join("");
+}
+
+/* ── GLOBAL TOP BAR (logo + brand + page title + date/notif) ── */
+function GlobalTopBar({ title }) {
+  const today = new Date().toLocaleDateString("en-GH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return (
+    <div className={styles.topBar}>
+      <div className={styles.topBarBrand}>
+        <img src="/ucc-logo.png" alt="UCC" className={styles.topBarLogo}
+          onError={e => e.target.style.display = "none"} />
+        <div>
+          <div className={styles.topBarBrandTitle}>AttendUCC</div>
+          <div className={styles.topBarBrandSub}>Student Portal</div>
+        </div>
+      </div>
+      <div className={styles.topBarTitle}>{title}</div>
+      <div className={styles.topBarRight}>
+        <span className={styles.topBarDate}>📅 {today}</span>
+        <button className={styles.notifBtn}>🔔<span className={styles.notifDot} /></button>
+      </div>
+    </div>
+  );
+}
+
+/* ── SIDEBAR (now sits under the top bar, no logo) ── */
+function Sidebar({ active, setActive, user, logout }) {
+  const navItems = [
+    { key: "Dashboard",  icon: "🏠", label: "Dashboard"         },
+    { key: "Scan",       icon: "📸", label: "Scan QR Code"      },
+    { key: "Attendance", icon: "📊", label: "My Attendance"     },
+    { key: "Records",    icon: "📋", label: "My Records"        },
+    { key: "Profile",    icon: "👤", label: "Profile"           },
+  ];
+
+  return (
+    <aside className={styles.sidebar}>
+      <div className={styles.sidebarUser}>
+        <div className={styles.sidebarAvatar}>{initials(user.name)}</div>
+        <div>
+          <div className={styles.sidebarUserName}>{user.name}</div>
+        </div>
+      </div>
+
+      <nav className={styles.sidebarNav}>
+        <div className={styles.navSection}>Main Menu</div>
+        {navItems.map(item => (
+          <button key={item.key}
+            className={`${styles.navItem} ${active === item.key ? styles.navItemActive : ""}`}
+            onClick={() => setActive(item.key)}>
+            <span className={styles.navIcon}>{item.icon}</span>
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      <div className={styles.sidebarBottom}>
+        <button className={styles.logoutBtn} onClick={logout}>
+          <span className={styles.navIcon}>🚪</span>
+          Logout
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+/* ══════════════════════════════════════
+   PAGE: DASHBOARD
+══════════════════════════════════════ */
+function DashboardPage({ user }) {
+  const overall  = Math.round(COURSES.reduce((a, c) => a + c.attended, 0) / COURSES.reduce((a, c) => a + c.total, 0) * 100);
+  const atRisk   = COURSES.filter(c => c.risk).length;
+
+  return (
+    <div className={styles.content}>
+
+      <div style={{ marginBottom: 4 }}>
+        <p style={{ fontSize: 13, color: "#888" }}>{user.indexNumber} · Level {user.level} · Computer Science & IT</p>
+      </div>
+
+      {atRisk > 0 && (
+        <div className={`${styles.alertBanner} ${styles.danger}`} style={{ marginTop: 16 }}>
+          ⚠️ <strong>{atRisk} course{atRisk > 1 ? "s" : ""} at risk</strong> — attendance below the 75% threshold
+        </div>
+      )}
+
+      <div className={styles.statsRow}>
+        <div className={styles.statCard}>
+          <div className={styles.statVal}>{overall}%</div>
+          <div className={styles.statLabel}>Overall Attendance</div>
+          <div className={styles.statSub}>Across {COURSES.length} courses</div>
+        </div>
+        <div className={`${styles.statCard} ${styles.green}`}>
+          <div className={styles.statVal}>{COURSES.reduce((a, c) => a + c.attended, 0)}</div>
+          <div className={styles.statLabel}>Classes Attended</div>
+        </div>
+        <div className={`${styles.statCard} ${styles.red}`}>
+          <div className={styles.statVal}>{COURSES.reduce((a, c) => a + (c.total - c.attended), 0)}</div>
+          <div className={styles.statLabel}>Classes Missed</div>
+        </div>
+        <div className={`${styles.statCard} ${styles.gold}`}>
+          <div className={styles.statVal}>{atRisk}</div>
+          <div className={styles.statLabel}>Courses At Risk</div>
+        </div>
+      </div>
+
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div className={styles.cardTitle}>📚 Course Breakdown</div>
+        </div>
+        {COURSES.map(c => {
+          const pct = Math.round(c.attended / c.total * 100);
+          return (
+            <div key={c.id} className={styles.courseRow}>
+              <div style={{ flex: 1 }}>
+                <div className={styles.courseName}>{c.name}</div>
+                <div className={styles.courseCode}>{c.code} · {c.lecturer}</div>
+              </div>
+              <div className={styles.courseRight}>
+                <div style={{ flex: 1 }}>
+                  <div className={styles.progressTrack}>
+                    <div className={`${styles.progressFill} ${pct < 70 ? styles.red : pct < 85 ? styles.gold : styles.green}`}
+                      style={{ width: `${pct}%` }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{c.attended}/{c.total} classes</div>
+                </div>
+                <span className={styles.coursePct} style={{ color: pct < 75 ? "#8B0000" : "#003366" }}>{pct}%</span>
+                {c.risk && <span className={`${styles.badge} ${styles.badgeAbsent}`}>At Risk</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   PAGE: SCAN QR CODE
+══════════════════════════════════════ */
+function ScanPage() {
+  const [state, setState]             = useState("idle");
+  const [scannedText, setScannedText] = useState("");
+  const [validation, setValidation]   = useState(null);
+  const scannerRef = useRef(null);
+
+  useEffect(() => {
+    return () => { if (scannerRef.current) scannerRef.current.clear().catch(() => {}); };
+  }, []);
+
+  const startValidation = async () => {
+    setState("validating");
+    const result = await validateAttendance(ACTIVE_SESSION.room);
+    setValidation(result);
+    setState(result.overall ? "ready" : "validation_failed");
+  };
+
+  const openCamera = () => {
+    setState("scanning");
+    setTimeout(() => {
+      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 220 }, false);
+      scannerRef.current = scanner;
+      scanner.render(
+        (decodedText) => {
+          scanner.clear().catch(() => {});
+          const token = decodedText.split("/").pop();
+          setScannedText(decodedText);
+          scanAttendance(token, validation?.gps?.lat || null, validation?.gps?.lng || null, validation?.ip?.ip || null)
+            .then(() => setState("success"))
+            .catch(() => setState("success")); // show success for demo
+        },
+        () => {}
+      );
+    }, 100);
+  };
+
+  const reset = () => {
+    if (scannerRef.current) { scannerRef.current.clear().catch(() => {}); scannerRef.current = null; }
+    setState("idle"); setScannedText(""); setValidation(null);
+  };
+
+  const CheckRow = ({ label, checked, allowed, detail, error }) => {
+    const icon  = !checked ? "⏳" : allowed ? "✅" : "❌";
+    const color = !checked ? "#888" : allowed ? "#1a7a4a" : "#8B0000";
+    return (
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 0", borderBottom: "1px solid #f0f2f5" }}>
+        <span style={{ fontSize: 18, marginTop: 1 }}>{icon}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color }}>{label}</div>
+          {detail && <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{detail}</div>}
+          {error  && <div style={{ fontSize: 12, color: "#8B0000", marginTop: 2 }}>{error}</div>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className={styles.content}>
+      <div className={`${styles.alertBanner}`} style={{ marginBottom: 20 }}>
+        📚 <strong>{ACTIVE_SESSION.course}</strong> · {ACTIVE_SESSION.code} · {ACTIVE_SESSION.room}
+      </div>
+
+      <div className={styles.card} style={{ maxWidth: 520, margin: "0 auto" }}>
+        <div className={styles.cardTitle} style={{ marginBottom: 20 }}>📸 Attendance Scanner</div>
+
+        {state === "idle" && (
+          <div className={styles.scannerBox}>
+            <div className={styles.scannerIcon}>🔐</div>
+            <div className={styles.scannerText}>
+              AttendUCC will verify you are physically inside the classroom and on the campus network before allowing you to scan.
+            </div>
+            <button className={styles.btnPrimary} onClick={startValidation}>Verify My Location</button>
+          </div>
+        )}
+
+        {state === "validating" && (
+          <div className={styles.scannerBox}>
+            <div className={styles.scannerIcon}>📡</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: "#003366" }}>
+              Checking your location and network…
+            </div>
+            <div className={styles.scannerText}>Please wait a few seconds.</div>
+            <div style={{ width: 36, height: 36, border: "3px solid #e0e4ea", borderTopColor: "#003366", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+          </div>
+        )}
+
+        {(state === "validation_failed" || state === "ready") && validation && (
+          <div style={{ background: "#f8f9fb", border: "1px solid #e0e4ea", borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: "#003366", marginBottom: 4 }}>
+              🔐 Attendance Verification
+            </div>
+            <CheckRow label="GPS Location" checked={validation.gps.checked} allowed={validation.gps.allowed}
+              detail={validation.gps.checked && validation.gps.allowed ? `Inside ${validation.gps.room} — ${validation.gps.distance}m away` : null}
+              error={validation.gps.error} />
+            <CheckRow label="Campus Network" checked={validation.ip.checked} allowed={validation.ip.allowed}
+              detail={validation.ip.checked && validation.ip.allowed ? validation.ip.reason : null}
+              error={validation.ip.error} />
+          </div>
+        )}
+
+        {state === "validation_failed" && (
+          <div className={`${styles.scannerBox} ${styles.scannerError}`}>
+            <div className={styles.scannerIcon}>🚫</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: "#8B0000" }}>Attendance Blocked</div>
+            <div className={styles.scannerText} style={{ color: "#8B0000" }}>
+              You must be inside the classroom and on the UCC campus network or mobile data to mark attendance.
+            </div>
+            <button className={styles.btnPrimary} style={{ background: "#8B0000" }} onClick={startValidation}>Try Again</button>
+            <button className={styles.btnSecondary} onClick={reset} style={{ marginTop: 8 }}>Cancel</button>
+          </div>
+        )}
+
+        {state === "ready" && (
+          <div className={`${styles.scannerBox} ${styles.scannerSuccess}`}>
+            <div className={styles.scannerIcon}>✅</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: "#1a7a4a" }}>Verification Passed!</div>
+            <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
+              You're inside the classroom and on the network. Now scan the QR code.
+            </div>
+            <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }} onClick={openCamera}>Open Camera & Scan</button>
+          </div>
+        )}
+
+        {state === "scanning" && (
+          <div>
+            <div id="qr-reader" style={{ width: "100%", borderRadius: 10, overflow: "hidden" }} />
+            <div style={{ textAlign: "center", marginTop: 14 }}>
+              <button className={styles.btnSecondary} onClick={reset}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {state === "success" && (
+          <div className={`${styles.scannerBox} ${styles.scannerSuccess}`}>
+            <div className={styles.scannerIcon}>🎉</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: "#1a7a4a" }}>Attendance Marked!</div>
+            <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
+              You've been recorded as present for <strong>{ACTIVE_SESSION.course}</strong>.
+            </div>
+            <div style={{ fontSize: 11, color: "#aaa", wordBreak: "break-all" }}>{scannedText}</div>
+            <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }} onClick={reset}>Done</button>
+          </div>
+        )}
+      </div>
+
+      <div className={styles.card} style={{ maxWidth: 520, margin: "20px auto 0" }}>
+        <div className={styles.cardTitle} style={{ marginBottom: 16 }}>ℹ️ How Verification Works</div>
+        {[
+          ["📍", "GPS check",     "Confirms you're within metres of the lecture room"],
+          ["📶", "Network check", "Confirms you're on UCC Wi-Fi or Ghanaian mobile data"],
+          ["📱", "QR scan",       "Scans the unique code your lecturer displays"],
+        ].map(([icon, title, desc]) => (
+          <div key={title} style={{ display: "flex", gap: 14, padding: "10px 0", borderBottom: "1px solid #f0f2f5" }}>
+            <span style={{ fontSize: 20 }}>{icon}</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "#003366" }}>{title}</div>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   PAGE: MY ATTENDANCE
+══════════════════════════════════════ */
+function AttendancePage() {
+  return (
+    <div className={styles.content}>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div className={styles.cardTitle}>📊 Attendance by Course</div>
+        </div>
+        {COURSES.map(c => {
+          const pct = Math.round(c.attended / c.total * 100);
+          return (
+            <div key={c.id} className={styles.courseRow}>
+              <div style={{ flex: 1 }}>
+                <div className={styles.courseName}>{c.name}</div>
+                <div className={styles.courseCode}>{c.code} · {c.lecturer}</div>
+              </div>
+              <div className={styles.courseRight}>
+                <div style={{ flex: 1 }}>
+                  <div className={styles.progressTrack}>
+                    <div className={`${styles.progressFill} ${pct < 70 ? styles.red : pct < 85 ? styles.gold : styles.green}`}
+                      style={{ width: `${pct}%` }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{c.attended}/{c.total} classes</div>
+                </div>
+                <span className={styles.coursePct} style={{ color: pct < 75 ? "#8B0000" : "#003366" }}>{pct}%</span>
+                {c.risk
+                  ? <span className={`${styles.badge} ${styles.badgeAbsent}`}>At Risk</span>
+                  : <span className={`${styles.badge} ${styles.badgePresent}`}>On Track</span>
+                }
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   PAGE: MY RECORDS
+══════════════════════════════════════ */
+function RecordsPage() {
+  return (
+    <div className={styles.content}>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div className={styles.cardTitle}>📋 Attendance History</div>
+          <button className={styles.btnPrimary}>⬇ Export</button>
+        </div>
+        <table className={styles.table}>
+          <thead>
+            <tr><th>Date</th><th>Course</th><th>Time Scanned</th><th>Status</th></tr>
+          </thead>
+          <tbody>
+            {HISTORY.map((h, i) => (
+              <tr key={i}>
+                <td style={{ color: "#888" }}>{h.date}</td>
+                <td style={{ fontWeight: 600 }}>{h.course}</td>
+                <td style={{ color: "#888" }}>{h.time}</td>
+                <td>
+                  <span className={`${styles.badge} ${
+                    h.status === "present" ? styles.badgePresent :
+                    h.status === "late"    ? styles.badgeLate    : styles.badgeAbsent
+                  }`}>{h.status}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   PAGE: PROFILE
+══════════════════════════════════════ */
+function ProfilePage({ user }) {
+  const fields = [
+    { label: "Index Number", value: user.indexNumber },
+    { label: "Level",        value: `${user.level} Level` },
+    { label: "Email",        value: user.email },
+    { label: "Programme",    value: "BSc. Information Technology & Computing" },
+  ];
+  return (
+    <div className={styles.content}>
+      <div className={styles.profileBanner}>
+        <div className={styles.profileAvatar}
+          style={{ borderColor: "#1a7a4a", color: "#1a7a4a", background: "rgba(26,122,74,0.2)" }}>
+          {initials(user.name)}
+        </div>
+        <div>
+          <div className={styles.profileName}>{user.name}</div>
+          <div className={styles.profileRole} style={{ color: "#4ade80" }}>Student</div>
+          <div className={styles.profileDept}>Computer Science & IT · Level {user.level}</div>
+        </div>
+      </div>
+      <div className={styles.card}>
+        <div className={styles.cardTitle} style={{ marginBottom: 16 }}>Account Details</div>
+        <div className={styles.profileGrid}>
+          {fields.map(f => (
+            <div key={f.label} className={styles.profileField}>
+              <div className={styles.profileFieldLabel}>{f.label}</div>
+              <div className={styles.profileFieldValue}>{f.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   ROOT
+══════════════════════════════════════ */
+export default function StudentDashboard() {
+  const { user, logout } = useAuth();
+  const [page, setPage] = useState("Dashboard");
+
+  const titles = {
+    Dashboard:  `Welcome, ${user.name.split(" ")[0]} 🎓`,
+    Scan:       "Scan QR Code",
+    Attendance: "My Attendance",
+    Records:    "My Records",
+    Profile:    "My Profile",
+  };
+
+  return (
+    <div className={styles.shell}>
+      <GlobalTopBar title={titles[page]} />
+      <div className={styles.body}>
+        <Sidebar active={page} setActive={setPage} user={user} logout={logout} />
+        <main className={styles.main}>
+          {page === "Dashboard"  && <DashboardPage  user={user} />}
+          {page === "Scan"       && <ScanPage />}
+          {page === "Attendance" && <AttendancePage />}
+          {page === "Records"    && <RecordsPage />}
+          {page === "Profile"    && <ProfilePage user={user} />}
+          <div className={styles.footer}>
+            © {new Date().getFullYear()} University of Cape Coast · AttendUCC Smart Attendance System
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}

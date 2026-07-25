@@ -1,0 +1,32 @@
+.navbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.left  { display: flex; align-items: center; gap: 10px; }
+.logo  { font-family: var(--font-head); font-weight: 800; font-size: 18px; color: var(--accent); }
+.roleBadge {
+  font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 999px;
+  border: 1px solid; letter-spacing: 0.05em;
+}
+.right { display: flex; align-items: center; gap: 12px; }
+.logoutBtn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  border-radius: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-body);
+  transition: all 0.2s;
+}
+.logoutBtn:hover { border-color: var(--text-2); color: var(--text-1); }
