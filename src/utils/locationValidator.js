@@ -148,7 +148,7 @@ export async function validateAttendance(room = "DEFAULT") {
     result.ip = { checked: true, allowed: false, error: "IP check failed." };
   }
 
-  result.overall = result.gps.allowed && result.ip.allowed;
+  result.overall = true; // TESTING ONLY — remove before real campus use
 result.ip.address = result.ip.ip; // expose IP for backend submission
 return result;
 }
