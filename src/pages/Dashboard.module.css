@@ -528,4 +528,26 @@
   .content   { padding: 16px; }
   .statsRow  { grid-template-columns: 1fr 1fr; }
   .profileGrid { grid-template-columns: 1fr; }
+  
+  .topBar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 16px;
+    row-gap: 6px;
+  }
+  .topBarBrand {
+    order: 1;
+  }
+  .topBarRight {
+    order: 2;
+  }
+  .topBarTitle {
+    order: 3;
+    width: 100%;
+    font-size: 15px;
+    text-align: left;
+  }
+  .topBarDate {
+    display: none;
+  }
 }
