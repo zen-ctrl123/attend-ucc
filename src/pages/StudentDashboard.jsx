@@ -2,35 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import { validateAttendance } from "../utils/locationValidator";
-import { scanAttendance } from "../api";
+import { scanAttendance, getCourses, getStudentAttendance } from "../api";
 import styles from "./Dashboard.module.css";
-
-/* ── Mock data ── */
-const COURSES = [
-  { id: 1, name: "Introduction to Programming",  code: "ITC 101", lecturer: "Dr. E. Tetteh",    attended: 11, total: 12, risk: false },
-  { id: 2, name: "Data Structures & Algorithms", code: "ITC 203", lecturer: "Prof. A. Boateng", attended:  9, total: 12, risk: false },
-  { id: 3, name: "Web Technologies",             code: "ITC 305", lecturer: "Dr. K. Asante",    attended:  7, total: 12, risk: true  },
-  { id: 4, name: "Database Management Systems",  code: "ITC 207", lecturer: "Dr. Y. Mensah",    attended: 10, total: 12, risk: false },
-];
-
-const HISTORY = [
-  { date: "Mon 14 Apr", course: "ITC 101", status: "present", time: "08:03" },
-  { date: "Mon 14 Apr", course: "ITC 203", status: "present", time: "10:06" },
-  { date: "Mon 14 Apr", course: "ITC 305", status: "absent",  time: "—"    },
-  { date: "Tue 15 Apr", course: "ITC 207", status: "present", time: "14:02" },
-  { date: "Wed 16 Apr", course: "ITC 101", status: "late",    time: "08:19" },
-  { date: "Wed 16 Apr", course: "ITC 203", status: "present", time: "10:01" },
-  { date: "Thu 17 Apr", course: "ITC 305", status: "absent",  time: "—"    },
-  { date: "Thu 17 Apr", course: "ITC 207", status: "present", time: "14:04" },
-];
-
-const ACTIVE_SESSION = { course: "Introduction to Programming", code: "ITC 101", room: "LT 3" };
 
 function initials(name) {
   return name.split(" ").map(w => w[0]).slice(0, 2).join("");
 }
 
-/* ── GLOBAL TOP BAR (logo + brand + page title + date/notif) ── */
+/* ── GLOBAL TOP BAR ── */
 function GlobalTopBar({ title, onMenuClick }) {
   const today = new Date().toLocaleDateString("en-GH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return (
@@ -53,7 +32,7 @@ function GlobalTopBar({ title, onMenuClick }) {
   );
 }
 
-/* ── SIDEBAR (now sits under the top bar, no logo) ── */
+/* ── SIDEBAR ── */
 function Sidebar({ active, setActive, user, logout, drawerOpen, closeDrawer }) {
   const navItems = [
     { key: "Dashboard",  icon: "🏠", label: "Dashboard"         },
@@ -106,14 +85,36 @@ function Sidebar({ active, setActive, user, logout, drawerOpen, closeDrawer }) {
    PAGE: DASHBOARD
 ══════════════════════════════════════ */
 function DashboardPage({ user }) {
-  const overall  = Math.round(COURSES.reduce((a, c) => a + c.attended, 0) / COURSES.reduce((a, c) => a + c.total, 0) * 100);
-  const atRisk   = COURSES.filter(c => c.risk).length;
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+
+  useEffect(() => {
+    getCourses()
+      .then(setCourses)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className={styles.content}><div className={styles.emptyState}>Loading your courses…</div></div>;
+  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}>⚠️ {error}</div></div>;
+
+  const withPct = courses.map(c => {
+    const pct  = c.total_sessions > 0 ? Math.round((c.attended / c.total_sessions) * 100) : 100;
+    const risk = c.total_sessions > 0 && (c.attended / c.total_sessions) < 0.75;
+    return { ...c, pct, risk };
+  });
+
+  const totalSessions = courses.reduce((a, c) => a + c.total_sessions, 0);
+  const totalAttended = courses.reduce((a, c) => a + c.attended, 0);
+  const overall = totalSessions > 0 ? Math.round((totalAttended / totalSessions) * 100) : 100;
+  const atRisk  = withPct.filter(c => c.risk).length;
 
   return (
     <div className={styles.content}>
 
       <div style={{ marginBottom: 4 }}>
-        <p style={{ fontSize: 13, color: "#888" }}>{user.indexNumber} · Level {user.level} · Computer Science & IT</p>
+        <p style={{ fontSize: 13, color: "#888" }}>{user.indexNumber} · Level {user.level} · {user.programme}</p>
       </div>
 
       {atRisk > 0 && (
@@ -126,14 +127,14 @@ function DashboardPage({ user }) {
         <div className={styles.statCard}>
           <div className={styles.statVal}>{overall}%</div>
           <div className={styles.statLabel}>Overall Attendance</div>
-          <div className={styles.statSub}>Across {COURSES.length} courses</div>
+          <div className={styles.statSub}>Across {courses.length} courses</div>
         </div>
         <div className={`${styles.statCard} ${styles.green}`}>
-          <div className={styles.statVal}>{COURSES.reduce((a, c) => a + c.attended, 0)}</div>
+          <div className={styles.statVal}>{totalAttended}</div>
           <div className={styles.statLabel}>Classes Attended</div>
         </div>
         <div className={`${styles.statCard} ${styles.red}`}>
-          <div className={styles.statVal}>{COURSES.reduce((a, c) => a + (c.total - c.attended), 0)}</div>
+          <div className={styles.statVal}>{totalSessions - totalAttended}</div>
           <div className={styles.statLabel}>Classes Missed</div>
         </div>
         <div className={`${styles.statCard} ${styles.gold}`}>
@@ -146,28 +147,27 @@ function DashboardPage({ user }) {
         <div className={styles.cardHeader}>
           <div className={styles.cardTitle}>📚 Course Breakdown</div>
         </div>
-        {COURSES.map(c => {
-          const pct = Math.round(c.attended / c.total * 100);
-          return (
-            <div key={c.id} className={styles.courseRow}>
-              <div style={{ flex: 1 }}>
-                <div className={styles.courseName}>{c.name}</div>
-                <div className={styles.courseCode}>{c.code} · {c.lecturer}</div>
-              </div>
-              <div className={styles.courseRight}>
-                <div style={{ flex: 1 }}>
-                  <div className={styles.progressTrack}>
-                    <div className={`${styles.progressFill} ${pct < 70 ? styles.red : pct < 85 ? styles.gold : styles.green}`}
-                      style={{ width: `${pct}%` }} />
-                  </div>
-                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{c.attended}/{c.total} classes</div>
-                </div>
-                <span className={styles.coursePct} style={{ color: pct < 75 ? "#8B0000" : "#003366" }}>{pct}%</span>
-                {c.risk && <span className={`${styles.badge} ${styles.badgeAbsent}`}>At Risk</span>}
-              </div>
+        {withPct.length === 0 ? (
+          <div className={styles.emptyState}>You're not enrolled in any courses yet.</div>
+        ) : withPct.map(c => (
+          <div key={c.id} className={styles.courseRow}>
+            <div style={{ flex: 1 }}>
+              <div className={styles.courseName}>{c.name}</div>
+              <div className={styles.courseCode}>{c.code}</div>
             </div>
-          );
-        })}
+            <div className={styles.courseRight}>
+              <div style={{ flex: 1 }}>
+                <div className={styles.progressTrack}>
+                  <div className={`${styles.progressFill} ${c.pct < 70 ? styles.red : c.pct < 85 ? styles.gold : styles.green}`}
+                    style={{ width: `${c.pct}%` }} />
+                </div>
+                <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{c.attended}/{c.total_sessions} classes</div>
+              </div>
+              <span className={styles.coursePct} style={{ color: c.pct < 75 ? "#8B0000" : "#003366" }}>{c.pct}%</span>
+              {c.risk && <span className={`${styles.badge} ${styles.badgeAbsent}`}>At Risk</span>}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -180,6 +180,8 @@ function ScanPage() {
   const [state, setState]             = useState("idle");
   const [scannedText, setScannedText] = useState("");
   const [validation, setValidation]   = useState(null);
+  const [resultStatus, setResultStatus] = useState("");
+  const [scanError, setScanError]     = useState("");
   const scannerRef = useRef(null);
 
   useEffect(() => {
@@ -188,7 +190,7 @@ function ScanPage() {
 
   const startValidation = async () => {
     setState("validating");
-    const result = await validateAttendance(ACTIVE_SESSION.room);
+    const result = await validateAttendance();
     setValidation(result);
     setState(result.overall ? "ready" : "validation_failed");
   };
@@ -204,8 +206,8 @@ function ScanPage() {
           const token = decodedText.split("/").pop();
           setScannedText(decodedText);
           scanAttendance(token, validation?.gps?.lat || null, validation?.gps?.lng || null, validation?.ip?.ip || null)
-            .then(() => setState("success"))
-            .catch(() => setState("success")); // show success for demo
+            .then(res => { setResultStatus(res.status); setState("success"); })
+            .catch(err => { setScanError(err.message); setState("scan_failed"); });
         },
         () => {}
       );
@@ -214,7 +216,7 @@ function ScanPage() {
 
   const reset = () => {
     if (scannerRef.current) { scannerRef.current.clear().catch(() => {}); scannerRef.current = null; }
-    setState("idle"); setScannedText(""); setValidation(null);
+    setState("idle"); setScannedText(""); setValidation(null); setScanError("");
   };
 
   const CheckRow = ({ label, checked, allowed, detail, error }) => {
@@ -234,8 +236,8 @@ function ScanPage() {
 
   return (
     <div className={styles.content}>
-      <div className={`${styles.alertBanner}`} style={{ marginBottom: 20 }}>
-        📚 <strong>{ACTIVE_SESSION.course}</strong> · {ACTIVE_SESSION.code} · {ACTIVE_SESSION.room}
+      <div className={styles.alertBanner} style={{ marginBottom: 20 }}>
+        📚 Scan the QR code your lecturer displays in class to mark your attendance
       </div>
 
       <div className={styles.card} style={{ maxWidth: 520, margin: "0 auto" }}>
@@ -258,7 +260,6 @@ function ScanPage() {
               Checking your location and network…
             </div>
             <div className={styles.scannerText}>Please wait a few seconds.</div>
-            <div style={{ width: 36, height: 36, border: "3px solid #e0e4ea", borderTopColor: "#003366", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
           </div>
         )}
 
@@ -268,7 +269,7 @@ function ScanPage() {
               🔐 Attendance Verification
             </div>
             <CheckRow label="GPS Location" checked={validation.gps.checked} allowed={validation.gps.allowed}
-              detail={validation.gps.checked && validation.gps.allowed ? `Inside ${validation.gps.room} — ${validation.gps.distance}m away` : null}
+              detail={validation.gps.checked && validation.gps.allowed ? validation.gps.detail : null}
               error={validation.gps.error} />
             <CheckRow label="Campus Network" checked={validation.ip.checked} allowed={validation.ip.allowed}
               detail={validation.ip.checked && validation.ip.allowed ? validation.ip.reason : null}
@@ -308,14 +309,24 @@ function ScanPage() {
           </div>
         )}
 
+        {state === "scan_failed" && (
+          <div className={`${styles.scannerBox} ${styles.scannerError}`}>
+            <div className={styles.scannerIcon}>⚠️</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: "#8B0000" }}>Couldn't Mark Attendance</div>
+            <div className={styles.scannerText} style={{ color: "#8B0000" }}>{scanError}</div>
+            <button className={styles.btnPrimary} style={{ background: "#8B0000" }} onClick={reset}>Try Again</button>
+          </div>
+        )}
+
         {state === "success" && (
           <div className={`${styles.scannerBox} ${styles.scannerSuccess}`}>
             <div className={styles.scannerIcon}>🎉</div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: "#1a7a4a" }}>Attendance Marked!</div>
-            <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
-              You've been recorded as present for <strong>{ACTIVE_SESSION.course}</strong>.
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: "#1a7a4a" }}>
+              {resultStatus === "late" ? "Marked Present (Late)" : "Attendance Marked!"}
             </div>
-            <div style={{ fontSize: 11, color: "#aaa", wordBreak: "break-all" }}>{scannedText}</div>
+            <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
+              You've been recorded as {resultStatus === "late" ? "late" : "present"} for this session.
+            </div>
             <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }} onClick={reset}>Done</button>
           </div>
         )}
@@ -345,19 +356,36 @@ function ScanPage() {
    PAGE: MY ATTENDANCE
 ══════════════════════════════════════ */
 function AttendancePage() {
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+
+  useEffect(() => {
+    getCourses()
+      .then(setCourses)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div className={styles.content}><div className={styles.emptyState}>Loading…</div></div>;
+  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}>⚠️ {error}</div></div>;
+
   return (
     <div className={styles.content}>
       <div className={styles.card}>
         <div className={styles.cardHeader}>
           <div className={styles.cardTitle}>📊 Attendance by Course</div>
         </div>
-        {COURSES.map(c => {
-          const pct = Math.round(c.attended / c.total * 100);
+        {courses.length === 0 ? (
+          <div className={styles.emptyState}>You're not enrolled in any courses yet.</div>
+        ) : courses.map(c => {
+          const pct  = c.total_sessions > 0 ? Math.round((c.attended / c.total_sessions) * 100) : 100;
+          const risk = c.total_sessions > 0 && (c.attended / c.total_sessions) < 0.75;
           return (
             <div key={c.id} className={styles.courseRow}>
               <div style={{ flex: 1 }}>
                 <div className={styles.courseName}>{c.name}</div>
-                <div className={styles.courseCode}>{c.code} · {c.lecturer}</div>
+                <div className={styles.courseCode}>{c.code}</div>
               </div>
               <div className={styles.courseRight}>
                 <div style={{ flex: 1 }}>
@@ -365,10 +393,10 @@ function AttendancePage() {
                     <div className={`${styles.progressFill} ${pct < 70 ? styles.red : pct < 85 ? styles.gold : styles.green}`}
                       style={{ width: `${pct}%` }} />
                   </div>
-                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{c.attended}/{c.total} classes</div>
+                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>{c.attended}/{c.total_sessions} classes</div>
                 </div>
                 <span className={styles.coursePct} style={{ color: pct < 75 ? "#8B0000" : "#003366" }}>{pct}%</span>
-                {c.risk
+                {risk
                   ? <span className={`${styles.badge} ${styles.badgeAbsent}`}>At Risk</span>
                   : <span className={`${styles.badge} ${styles.badgePresent}`}>On Track</span>
                 }
@@ -385,6 +413,17 @@ function AttendancePage() {
    PAGE: MY RECORDS
 ══════════════════════════════════════ */
 function RecordsPage() {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+
+  useEffect(() => {
+    getStudentAttendance()
+      .then(setRecords)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className={styles.content}>
       <div className={styles.card}>
@@ -392,26 +431,34 @@ function RecordsPage() {
           <div className={styles.cardTitle}>📋 Attendance History</div>
           <button className={styles.btnPrimary}>⬇ Export</button>
         </div>
-        <table className={styles.table}>
-          <thead>
-            <tr><th>Date</th><th>Course</th><th>Time Scanned</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            {HISTORY.map((h, i) => (
-              <tr key={i}>
-                <td style={{ color: "#888" }}>{h.date}</td>
-                <td style={{ fontWeight: 600 }}>{h.course}</td>
-                <td style={{ color: "#888" }}>{h.time}</td>
-                <td>
-                  <span className={`${styles.badge} ${
-                    h.status === "present" ? styles.badgePresent :
-                    h.status === "late"    ? styles.badgeLate    : styles.badgeAbsent
-                  }`}>{h.status}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {loading ? (
+          <div className={styles.emptyState}>Loading…</div>
+        ) : error ? (
+          <div style={{ color: "#8B0000", padding: "12px 0" }}>{error}</div>
+        ) : records.length === 0 ? (
+          <div className={styles.emptyState}>No attendance records yet.</div>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr><th>Date</th><th>Course</th><th>Time Scanned</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {records.map((h, i) => (
+                <tr key={i}>
+                  <td style={{ color: "#888" }}>{h.date}</td>
+                  <td style={{ fontWeight: 600 }}>{h.course_name} <span style={{ color: "#aaa", fontWeight: 400 }}>({h.course_code})</span></td>
+                  <td style={{ color: "#888" }}>{h.scanned_at ? new Date(h.scanned_at).toLocaleTimeString() : "—"}</td>
+                  <td>
+                    <span className={`${styles.badge} ${
+                      h.status === "present" ? styles.badgePresent :
+                      h.status === "late"    ? styles.badgeLate    : styles.badgeAbsent
+                    }`}>{h.status}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
@@ -425,7 +472,7 @@ function ProfilePage({ user }) {
     { label: "Index Number", value: user.indexNumber },
     { label: "Level",        value: `${user.level} Level` },
     { label: "Email",        value: user.email },
-    { label: "Programme",    value: "BSc. Information Technology & Computing" },
+    { label: "Programme",    value: user.programme },
   ];
   return (
     <div className={styles.content}>
@@ -437,7 +484,7 @@ function ProfilePage({ user }) {
         <div>
           <div className={styles.profileName}>{user.name}</div>
           <div className={styles.profileRole} style={{ color: "#4ade80" }}>Student</div>
-          <div className={styles.profileDept}>Computer Science & IT · Level {user.level}</div>
+          <div className={styles.profileDept}>{user.programme} · Level {user.level}</div>
         </div>
       </div>
       <div className={styles.card}>
