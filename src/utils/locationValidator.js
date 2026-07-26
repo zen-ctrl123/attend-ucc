@@ -76,6 +76,9 @@ export const ALLOWED_IP_PREFIXES = [
 
   // MTN Ghana
   "154.160.",
+  "154.161.",
+  "154.162.",
+  "154.163.",
   "41.190.",
   "41.191.",
 
@@ -148,7 +151,7 @@ export async function validateAttendance(room = "DEFAULT") {
     result.ip = { checked: true, allowed: false, error: "IP check failed." };
   }
 
-  result.overall = true; // TESTING ONLY — remove before real campus use
+  result.overall = true; // TESTING ONLY — remove before final submission
 result.ip.address = result.ip.ip; // expose IP for backend submission
 return result;
 }
