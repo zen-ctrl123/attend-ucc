@@ -515,6 +515,18 @@
 .sessionItemActive     { background: #e6f0ff !important; border-color: #003366 !important; }
 
 /* ── RESPONSIVE ── */
+.menuBtn {
+  display: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 22px;
+  padding: 4px 10px 4px 0;
+}
+.drawerOverlay {
+  display: none;
+}
 @media (max-width: 900px) {
   .sidebar   { width: 220px; }
   .main      { margin-left: 220px; }
@@ -562,17 +574,6 @@
   .topBarBrand {
     order: 1;
   }
-  .menuBtn {
-  display: none;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: #ffffff;
-  font-size: 22px;
-  padding: 4px 10px 4px 0;
-}
-.drawerOverlay {
-  display: none;
 }
   .topBarRight {
     order: 2;
