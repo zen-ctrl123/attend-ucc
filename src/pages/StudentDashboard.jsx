@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 import { validateAttendance } from "../utils/locationValidator";
 import { scanAttendance, getCourses, getStudentAttendance } from "../api";
 import styles from "./Dashboard.module.css";
@@ -185,7 +185,11 @@ function ScanPage() {
   const scannerRef = useRef(null);
 
   useEffect(() => {
-    return () => { if (scannerRef.current) scannerRef.current.clear().catch(() => {}); };
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
+      }
+    };
   }, []);
 
   const startValidation = async () => {
@@ -197,25 +201,37 @@ function ScanPage() {
 
   const openCamera = () => {
     setState("scanning");
-    setTimeout(() => {
-      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 220 }, false);
-      scannerRef.current = scanner;
-      scanner.render(
-        (decodedText) => {
-          scanner.clear().catch(() => {});
-          const token = decodedText.split("/").pop();
-          setScannedText(decodedText);
-          scanAttendance(token, validation?.gps?.lat || null, validation?.gps?.lng || null, validation?.ip?.ip || null)
-            .then(res => { setResultStatus(res.status); setState("success"); })
-            .catch(err => { setScanError(err.message); setState("scan_failed"); });
-        },
-        () => {}
-      );
+    setTimeout(async () => {
+      try {
+        const html5QrCode = new Html5Qrcode("qr-reader");
+        scannerRef.current = html5QrCode;
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: 220 },
+          (decodedText) => {
+            html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+            const token = decodedText.split("/").pop();
+            setScannedText(decodedText);
+            scanAttendance(token, validation?.gps?.lat || null, validation?.gps?.lng || null, validation?.ip?.ip || null)
+              .then(res => { setResultStatus(res.status); setState("success"); })
+              .catch(err => { setScanError(err.message); setState("scan_failed"); });
+          },
+          () => {}
+        );
+      } catch (err) {
+        setScanError(err.message?.includes("NotAllowedError") || err.name === "NotAllowedError"
+          ? "Camera permission was denied. Please allow camera access and try again."
+          : "Could not start the camera: " + (err.message || err));
+        setState("scan_failed");
+      }
     }, 100);
   };
 
   const reset = () => {
-    if (scannerRef.current) { scannerRef.current.clear().catch(() => {}); scannerRef.current = null; }
+    if (scannerRef.current) {
+      scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
+      scannerRef.current = null;
+    }
     setState("idle"); setScannedText(""); setValidation(null); setScanError("");
   };
 
