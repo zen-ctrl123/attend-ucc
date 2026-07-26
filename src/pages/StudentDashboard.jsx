@@ -31,11 +31,12 @@ function initials(name) {
 }
 
 /* ── GLOBAL TOP BAR (logo + brand + page title + date/notif) ── */
-function GlobalTopBar({ title }) {
+function GlobalTopBar({ title, onMenuClick }) {
   const today = new Date().toLocaleDateString("en-GH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   return (
     <div className={styles.topBar}>
       <div className={styles.topBarBrand}>
+        <button className={styles.menuBtn} onClick={onMenuClick} aria-label="Open menu">☰</button>
         <img src="/ucc-logo.png" alt="UCC" className={styles.topBarLogo}
           onError={e => e.target.style.display = "none"} />
         <div>
@@ -53,7 +54,7 @@ function GlobalTopBar({ title }) {
 }
 
 /* ── SIDEBAR (now sits under the top bar, no logo) ── */
-function Sidebar({ active, setActive, user, logout }) {
+function Sidebar({ active, setActive, user, logout, drawerOpen, closeDrawer }) {
   const navItems = [
     { key: "Dashboard",  icon: "🏠", label: "Dashboard"         },
     { key: "Scan",       icon: "📸", label: "Scan QR Code"      },
@@ -62,34 +63,42 @@ function Sidebar({ active, setActive, user, logout }) {
     { key: "Profile",    icon: "👤", label: "Profile"           },
   ];
 
+  const handleNavClick = (key) => {
+    setActive(key);
+    closeDrawer();
+  };
+
   return (
-    <aside className={styles.sidebar}>
-      <div className={styles.sidebarUser}>
-        <div className={styles.sidebarAvatar}>{initials(user.name)}</div>
-        <div>
-          <div className={styles.sidebarUserName}>{user.name}</div>
+    <>
+      {drawerOpen && <div className={styles.drawerOverlay} onClick={closeDrawer} />}
+      <aside className={`${styles.sidebar} ${drawerOpen ? styles.sidebarOpen : ""}`}>
+        <div className={styles.sidebarUser}>
+          <div className={styles.sidebarAvatar}>{initials(user.name)}</div>
+          <div>
+            <div className={styles.sidebarUserName}>{user.name}</div>
+          </div>
         </div>
-      </div>
 
-      <nav className={styles.sidebarNav}>
-        <div className={styles.navSection}>Main Menu</div>
-        {navItems.map(item => (
-          <button key={item.key}
-            className={`${styles.navItem} ${active === item.key ? styles.navItemActive : ""}`}
-            onClick={() => setActive(item.key)}>
-            <span className={styles.navIcon}>{item.icon}</span>
-            {item.label}
+        <nav className={styles.sidebarNav}>
+          <div className={styles.navSection}>Main Menu</div>
+          {navItems.map(item => (
+            <button key={item.key}
+              className={`${styles.navItem} ${active === item.key ? styles.navItemActive : ""}`}
+              onClick={() => handleNavClick(item.key)}>
+              <span className={styles.navIcon}>{item.icon}</span>
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className={styles.sidebarBottom}>
+          <button className={styles.logoutBtn} onClick={logout}>
+            <span className={styles.navIcon}>🚪</span>
+            Logout
           </button>
-        ))}
-      </nav>
-
-      <div className={styles.sidebarBottom}>
-        <button className={styles.logoutBtn} onClick={logout}>
-          <span className={styles.navIcon}>🚪</span>
-          Logout
-        </button>
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -452,6 +461,7 @@ function ProfilePage({ user }) {
 export default function StudentDashboard() {
   const { user, logout } = useAuth();
   const [page, setPage] = useState("Dashboard");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const titles = {
     Dashboard:  `Welcome, ${user.name.split(" ")[0]} 🎓`,
@@ -463,9 +473,10 @@ export default function StudentDashboard() {
 
   return (
     <div className={styles.shell}>
-      <GlobalTopBar title={titles[page]} />
+      <GlobalTopBar title={titles[page]} onMenuClick={() => setDrawerOpen(true)} />
       <div className={styles.body}>
-        <Sidebar active={page} setActive={setPage} user={user} logout={logout} />
+        <Sidebar active={page} setActive={setPage} user={user} logout={logout}
+          drawerOpen={drawerOpen} closeDrawer={() => setDrawerOpen(false)} />
         <main className={styles.main}>
           {page === "Dashboard"  && <DashboardPage  user={user} />}
           {page === "Scan"       && <ScanPage />}

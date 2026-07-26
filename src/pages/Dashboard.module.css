@@ -523,12 +523,36 @@
 }
 
 @media (max-width: 640px) {
-  .sidebar   { display: none; }
+  .menuBtn { display: inline-flex; align-items: center; }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: min(80vw, 280px);
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 300;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.25);
+  }
+  .sidebar.sidebarOpen {
+    transform: translateX(0);
+  }
+
+  .drawerOverlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 250;
+  }
+
   .main      { margin-left: 0; }
   .content   { padding: 16px; }
   .statsRow  { grid-template-columns: 1fr 1fr; }
   .profileGrid { grid-template-columns: 1fr; }
-  
+
   .topBar {
     flex-wrap: wrap;
     height: auto;
@@ -538,6 +562,18 @@
   .topBarBrand {
     order: 1;
   }
+  .menuBtn {
+  display: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 22px;
+  padding: 4px 10px 4px 0;
+}
+.drawerOverlay {
+  display: none;
+}
   .topBarRight {
     order: 2;
   }
