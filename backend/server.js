@@ -56,12 +56,32 @@ app.post("/api/auth/register", async (req, res) => {
     const userId = userResult.lastInsertRowid;
 
     if (role === "student") {
-      if (!index_number) return res.status(400).json({ error: "Index number is required for students." });
-      await db.execute({
-        sql: "INSERT INTO students (user_id, index_number, level, programme) VALUES (?, ?, ?, ?)",
-        args: [userId, index_number, level || "100", programme || "BSc. Information Technology & Computing"],
-      });
-    }
+  if (!index_number) return res.status(400).json({ error: "Index number is required for students." });
+  await db.execute({
+    sql: "INSERT INTO students (user_id, index_number, level, programme) VALUES (?, ?, ?, ?)",
+    args: [userId, index_number, level || "100", programme || "BSc. Information Technology & Computing"],
+  });
+
+  // Auto-enroll new student in all existing courses
+  const newStudentRes = await db.execute({
+    sql: "SELECT id FROM students WHERE user_id = ?",
+    args: [userId],
+  });
+  const newStudentId = newStudentRes.rows[0].id;
+
+  const allCoursesRes = await db.execute({
+    sql: "SELECT id FROM courses",
+    args: [],
+  });
+
+  if (allCoursesRes.rows.length > 0) {
+    const enrolStatements = allCoursesRes.rows.map((c) => ({
+      sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)",
+      args: [newStudentId, c.id],
+    }));
+    await db.batch(enrolStatements, "write");
+  }
+}
 
     if (role === "lecturer") {
       if (!staff_id) return res.status(400).json({ error: "Staff ID is required for lecturers." });
