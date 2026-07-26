@@ -231,7 +231,7 @@ app.post("/api/sessions", authenticate, async (req, res) => {
       args: [course_id, room, today, new Date().toTimeString().slice(0, 5)],
     });
 
-    const sessionId = result.lastInsertRowid;
+    const sessionId = Number(result.lastInsertRowid);
 
     const studentsRes = await db.execute({
       sql: "SELECT student_id FROM enrolments WHERE course_id = ?",
