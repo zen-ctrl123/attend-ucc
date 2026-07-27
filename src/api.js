@@ -72,9 +72,25 @@ export async function createSession(course_id, room) {
 }
 
 export async function generateQR(sessionId) {
+  // Get lecturer's current GPS location
+  let lecturer_lat = null;
+  let lecturer_lng = null;
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true, timeout: 8000, maximumAge: 0
+      });
+    });
+    lecturer_lat = pos.coords.latitude;
+    lecturer_lng = pos.coords.longitude;
+  } catch {
+    // GPS unavailable — proceed without location
+  }
+
   const res = await fetch(`${BASE_URL}/sessions/${sessionId}/qr`, {
     method: "POST",
     headers: authHeaders(),
+    body: JSON.stringify({ lecturer_lat, lecturer_lng }),
   });
   return handleResponse(res);
 }

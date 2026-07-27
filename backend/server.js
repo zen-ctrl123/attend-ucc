@@ -277,13 +277,13 @@ app.post("/api/sessions/:id/qr", authenticate, async (req, res) => {
   if (req.user.role !== "lecturer") return res.status(403).json({ error: "Only lecturers can generate QR codes." });
 
   try {
-    const sessionId = req.params.id;
+    const { lecturer_lat, lecturer_lng } = req.body;
     const token      = `UCC-${sessionId}-${Date.now()}`;
     const expiry     = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
     await db.execute({
-      sql: "UPDATE sessions SET qr_token = ?, qr_expiry = ? WHERE id = ?",
-      args: [token, expiry, sessionId],
+      sql: "UPDATE sessions SET qr_token = ?, qr_expiry = ?, lecturer_lat = ?, lecturer_lng = ? WHERE id = ?",
+      args: [token, expiry, lecturer_lat || null, lecturer_lng || null, sessionId],
     });
 
     res.json({ token, expiry, qrValue: `https://attend-ucc.app/scan/${token}` });
@@ -359,6 +359,19 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
       }
     }
 
+    // Use lecturer's GPS location for geofencing if available
+    if (session.lecturer_lat && session.lecturer_lng && gps_lat && gps_lng) {
+      const { getDistanceMetres } = require("./locationUtils");
+      const distance = getDistanceMetres(
+        parseFloat(gps_lat), parseFloat(gps_lng),
+        parseFloat(session.lecturer_lat), parseFloat(session.lecturer_lng)
+      );
+      if (distance > 100) {
+        return res.status(400).json({
+          error: `You are ${Math.round(distance)}m away from the lecturer. Must be within 100m to mark attendance.`
+        });
+      }
+    }
     const sessionStart = new Date(`${session.date}T${session.start_time}`);
     const now          = new Date();
     const diffMinutes  = (now - sessionStart) / 60000;
