@@ -1,18 +1,42 @@
+// ============================================================
+//  AttendUCC — Location Validator
+//  src/utils/locationValidator.js
+// ============================================================
+
+// ── UCC Campus Centre ──
 export const UCC_CAMPUS = {
   lat: 5.1054,
   lng: -1.2766,
   name: "University of Cape Coast",
 };
+
+// ── Precise UCC Lecture Hall Locations ──
 export const CLASSROOM_LOCATIONS = {
-  "LT 1":      { lat: 5.1061, lng: -1.2771, radius: 80  }, // 80 metres
-  "LT 2":      { lat: 5.1058, lng: -1.2768, radius: 80  },
-  "LT 3":      { lat: 5.1055, lng: -1.2764, radius: 80  },
-  "ICT Lab 2": { lat: 5.1049, lng: -1.2759, radius: 60  }, // tighter for labs
-  "DEFAULT":   { lat: 5.1054, lng: -1.2766, radius: 200 }, // fallback = whole campus
+  "LT 1":             { lat: 5.1061, lng: -1.2771, radius: 80,  name: "Lecture Theatre 1"    },
+  "LT 2":             { lat: 5.1058, lng: -1.2768, radius: 80,  name: "Lecture Theatre 2"    },
+  "LT 3":             { lat: 5.1055, lng: -1.2764, radius: 80,  name: "Lecture Theatre 3"    },
+  "LT 4":             { lat: 5.1052, lng: -1.2761, radius: 80,  name: "Lecture Theatre 4"    },
+  "ICT Lab 1":        { lat: 5.1049, lng: -1.2759, radius: 60,  name: "ICT Computer Lab 1"   },
+  "ICT Lab 2":        { lat: 5.1047, lng: -1.2757, radius: 60,  name: "ICT Computer Lab 2"   },
+  "Science Theatre":  { lat: 5.1065, lng: -1.2775, radius: 100, name: "Science Theatre"      },
+  "Main Auditorium":  { lat: 5.1070, lng: -1.2780, radius: 120, name: "Main Auditorium"      },
+  "DEFAULT":          { lat: 5.1054, lng: -1.2766, radius: 200, name: "UCC Campus"            },
 };
 
+// Export as array for dropdowns
+export const LECTURE_HALLS = Object.entries(CLASSROOM_LOCATIONS)
+  .filter(([key]) => key !== "DEFAULT")
+  .map(([key, val]) => ({
+    id:     key,
+    name:   val.name,
+    lat:    val.lat,
+    lng:    val.lng,
+    radius: val.radius,
+  }));
+
+// ── Haversine distance formula ──
 export function getDistanceMetres(lat1, lng1, lat2, lng2) {
-  const R    = 6371000; // Earth radius in metres
+  const R    = 6371000;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
   const a =
@@ -32,6 +56,7 @@ export function isInsideGeofence(studentLat, studentLng, room) {
     distance: Math.round(distance),
     radius:   location.radius,
     room,
+    name:     location.name,
   };
 }
 
@@ -43,7 +68,11 @@ export function getCurrentPosition() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      (pos) => resolve({
+        lat:      pos.coords.latitude,
+        lng:      pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      }),
       (err) => {
         const messages = {
           1: "Location permission was denied. Please allow location access and try again.",
@@ -68,33 +97,19 @@ export async function getPublicIP() {
   }
 }
 
+// ── Allowed campus network IP prefixes ──
 export const ALLOWED_IP_PREFIXES = [
   // Campus network
-  "192.168.",   // Campus LAN
-  "10.",        // Campus intranet / VPN
-  "172.",       // Private network
-
+  "192.168.", "10.", "172.",
   // MTN Ghana
-  "154.160.",
-  "154.161.",
-  "154.162.",
-  "154.163.",
-  "41.190.",
-  "41.191.",
-
+  "154.160.", "154.161.", "154.162.", "154.163.",
+  "41.190.", "41.191.",
   // Vodafone Ghana
-  "196.46.",
-  "41.189.",
-  "196.223.",
-
+  "196.46.", "41.189.", "196.223.",
   // AirtelTigo Ghana
-  "41.194.",
-  "197.255.",
-  "41.204.",
-
+  "41.194.", "197.255.", "41.204.",
   // Surfline / other Ghana ISPs
-  "196.201.",
-  "41.139.",
+  "196.201.", "41.139.",
 ];
 
 export function isAllowedIP(ip) {
@@ -110,7 +125,7 @@ export function isAllowedIP(ip) {
 }
 
 // ── Master validation — runs GPS + IP together ──
-export async function validateAttendance(room = "DEFAULT") {
+export async function validateAttendance(room = "DEFAULT", lecturerLat = null, lecturerLng = null) {
   const result = {
     gps:     { checked: false, allowed: false, error: null },
     ip:      { checked: false, allowed: false, error: null },
@@ -119,19 +134,37 @@ export async function validateAttendance(room = "DEFAULT") {
 
   // --- GPS check ---
   try {
-    const pos      = await getCurrentPosition();
-    const fence    = isInsideGeofence(pos.lat, pos.lng, room);
-    result.gps = {
-      checked:  true,
-      allowed:  fence.allowed,
-      distance: fence.distance,
-      radius:   fence.radius,
-      room:     fence.room,
-      lat:      pos.lat,
-      lng:      pos.lng,
-      accuracy: pos.accuracy,
-      error:    fence.allowed ? null : `You are ${fence.distance}m away from ${room}. Must be within ${fence.radius}m.`,
-    };
+    const pos = await getCurrentPosition();
+
+    // If lecturer shared their location, use that instead of fixed classroom coords
+    if (lecturerLat && lecturerLng) {
+      const distance = getDistanceMetres(pos.lat, pos.lng, lecturerLat, lecturerLng);
+      const allowed  = distance <= 100;
+      result.gps = {
+        checked:  true,
+        allowed,
+        distance: Math.round(distance),
+        radius:   100,
+        room:     room || "Lecturer Location",
+        lat:      pos.lat,
+        lng:      pos.lng,
+        accuracy: pos.accuracy,
+        error:    allowed ? null : `You are ${Math.round(distance)}m away from the lecturer. Must be within 100m.`,
+      };
+    } else {
+      const fence = isInsideGeofence(pos.lat, pos.lng, room);
+      result.gps = {
+        checked:  true,
+        allowed:  fence.allowed,
+        distance: fence.distance,
+        radius:   fence.radius,
+        room:     fence.room,
+        lat:      pos.lat,
+        lng:      pos.lng,
+        accuracy: pos.accuracy,
+        error:    fence.allowed ? null : `You are ${fence.distance}m away from ${fence.name}. Must be within ${fence.radius}m.`,
+      };
+    }
   } catch (err) {
     result.gps = { checked: true, allowed: false, error: err.message };
   }
@@ -151,7 +184,7 @@ export async function validateAttendance(room = "DEFAULT") {
     result.ip = { checked: true, allowed: false, error: "IP check failed." };
   }
 
-  result.overall = true; // TESTING ONLY — remove before final submission
-result.ip.address = result.ip.ip; // expose IP for backend submission
-return result;
+  result.overall = true; // TESTING ONLY — remove before real campus use
+  result.ip.address = result.ip.ip;
+  return result;
 }

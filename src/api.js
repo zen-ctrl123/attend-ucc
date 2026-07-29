@@ -1,4 +1,9 @@
-const BASE_URL = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3001/api`;
+// ============================================================
+//  AttendUCC — API Connection Utility
+//  src/api.js
+// ============================================================
+
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 function getToken() {
   return localStorage.getItem("attenducc_token");
@@ -7,33 +12,37 @@ function getToken() {
 function authHeaders() {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${getToken()}`,
+    Authorization:  `Bearer ${getToken()}`,
   };
 }
+
 async function handleResponse(res) {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Something went wrong.");
   return data;
 }
 
+// ══════════════════════════════════════════════════════
+//  AUTH
+// ══════════════════════════════════════════════════════
+
 export async function login(identifier, password, role) {
   const res = await fetch(`${BASE_URL}/auth/login`, {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier, password, role }),
+    body:    JSON.stringify({ identifier, password, role }),
   });
   const data = await handleResponse(res);
-  // Save token and user to localStorage
   localStorage.setItem("attenducc_token", data.token);
-  localStorage.setItem("attenducc_user", JSON.stringify(data.user));
+  localStorage.setItem("attenducc_user",  JSON.stringify(data.user));
   return data.user;
 }
 
 export async function register(formData) {
   const res = await fetch(`${BASE_URL}/auth/register`, {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(formData),
+    body:    JSON.stringify(formData),
   });
   return handleResponse(res);
 }
@@ -48,37 +57,59 @@ export function getSavedUser() {
   return user ? JSON.parse(user) : null;
 }
 
+// ══════════════════════════════════════════════════════
+//  LECTURE HALLS
+// ══════════════════════════════════════════════════════
+
+export async function getLectureHalls() {
+  const res = await fetch(`${BASE_URL}/halls`);
+  return handleResponse(res);
+}
+
+// ══════════════════════════════════════════════════════
+//  COURSES
+// ══════════════════════════════════════════════════════
+
 export async function getCourses() {
+  const res = await fetch(`${BASE_URL}/courses`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function addCourse(name, code) {
   const res = await fetch(`${BASE_URL}/courses`, {
+    method:  "POST",
     headers: authHeaders(),
+    body:    JSON.stringify({ name, code }),
   });
   return handleResponse(res);
 }
 
+// ══════════════════════════════════════════════════════
+//  SESSIONS
+// ══════════════════════════════════════════════════════
+
 export async function getTodaySessions() {
-  const res = await fetch(`${BASE_URL}/sessions/today`, {
-    headers: authHeaders(),
-  });
+  const res = await fetch(`${BASE_URL}/sessions/today`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
 export async function createSession(course_id, room) {
   const res = await fetch(`${BASE_URL}/sessions`, {
-    method: "POST",
+    method:  "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ course_id, room }),
+    body:    JSON.stringify({ course_id, room }),
   });
   return handleResponse(res);
 }
 
 export async function generateQR(sessionId) {
-  // Get lecturer's current GPS location
+  // Capture lecturer's GPS location when generating QR
   let lecturer_lat = null;
   let lecturer_lng = null;
   try {
     const pos = await new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true, timeout: 8000, maximumAge: 0
+        enableHighAccuracy: true, timeout: 8000, maximumAge: 0,
       });
     });
     lecturer_lat = pos.coords.latitude;
@@ -88,47 +119,45 @@ export async function generateQR(sessionId) {
   }
 
   const res = await fetch(`${BASE_URL}/sessions/${sessionId}/qr`, {
-    method: "POST",
+    method:  "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ lecturer_lat, lecturer_lng }),
+    body:    JSON.stringify({ lecturer_lat, lecturer_lng }),
   });
   return handleResponse(res);
 }
 
 export async function endSession(sessionId) {
   const res = await fetch(`${BASE_URL}/sessions/${sessionId}/end`, {
-    method: "POST",
+    method:  "POST",
     headers: authHeaders(),
   });
   return handleResponse(res);
 }
 
+// ══════════════════════════════════════════════════════
+//  ATTENDANCE
+// ══════════════════════════════════════════════════════
+
 export async function scanAttendance(qr_token, gps_lat, gps_lng, ip_address) {
   const res = await fetch(`${BASE_URL}/attendance/scan`, {
-    method: "POST",
+    method:  "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ qr_token, gps_lat, gps_lng, ip_address }),
+    body:    JSON.stringify({ qr_token, gps_lat, gps_lng, ip_address }),
   });
   return handleResponse(res);
 }
 
 export async function getSessionAttendance(sessionId) {
-  const res = await fetch(`${BASE_URL}/attendance/session/${sessionId}`, {
-    headers: authHeaders(),
-  });
+  const res = await fetch(`${BASE_URL}/attendance/session/${sessionId}`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
 export async function getStudentAttendance() {
-  const res = await fetch(`${BASE_URL}/attendance/student`, {
-    headers: authHeaders(),
-  });
+  const res = await fetch(`${BASE_URL}/attendance/student`, { headers: authHeaders() });
   return handleResponse(res);
 }
 
 export async function getCourseReport(courseId) {
-  const res = await fetch(`${BASE_URL}/attendance/course/${courseId}`, {
-    headers: authHeaders(),
-  });
+  const res = await fetch(`${BASE_URL}/attendance/course/${courseId}`, { headers: authHeaders() });
   return handleResponse(res);
 }

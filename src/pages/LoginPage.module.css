@@ -89,10 +89,11 @@
 /* ── Right Panel ── */
 .rightPanel {
   flex: 1;
-  padding: 40px 40px;
+  padding: 40px;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  overflow-y: auto;
 }
 
 .formTitle {
@@ -109,7 +110,7 @@
   margin-bottom: 24px;
 }
 
-/* Role toggle */
+/* ── Toggle ── */
 .toggle {
   display: flex;
   border: 1.5px solid #003366;
@@ -127,10 +128,9 @@
   font-weight: 600;
   font-size: 13px;
   transition: all 0.2s;
-  border-color: #003366;
 }
 
-/* Fields */
+/* ── Fields ── */
 .fieldGroup { margin-bottom: 16px; }
 
 .label {
@@ -157,6 +157,32 @@
 }
 .input:focus { border-color: #003366; background: #fff; }
 
+/* ── Password show/hide ── */
+.passwordWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.passwordWrapper .input {
+  padding-right: 44px;
+}
+
+.eyeBtn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  line-height: 1;
+  color: #888;
+  transition: color 0.2s;
+}
+.eyeBtn:hover { color: #003366; }
+
+/* ── Forgot ── */
 .forgotRow { text-align: right; margin-bottom: 14px; }
 .forgotBtn {
   background: none;
@@ -167,6 +193,7 @@
   text-decoration: underline;
 }
 
+/* ── Error ── */
 .error {
   background: #fff0f0;
   border: 1px solid #ffcccc;
@@ -177,6 +204,7 @@
   margin-bottom: 14px;
 }
 
+/* ── Submit ── */
 .submitBtn {
   width: 100%;
   padding: 13px;
@@ -198,6 +226,7 @@
 .submitBtn:hover    { background: #004499; }
 .submitBtn:disabled { opacity: 0.6; cursor: not-allowed; }
 
+/* ── Signup link ── */
 .signupRow {
   display: flex;
   align-items: center;
@@ -216,7 +245,7 @@
   text-decoration: underline;
 }
 
-/* Footer */
+/* ── Footer ── */
 .footer {
   margin-top: 20px;
   font-size: 11px;
@@ -224,7 +253,7 @@
   text-align: center;
 }
 
-/* Modal */
+/* ── Modal ── */
 .modal {
   position: fixed;
   inset: 0;
@@ -235,28 +264,32 @@
   z-index: 999;
   padding: 20px;
 }
+
 .modalCard {
   background: #fff;
   border-radius: 16px;
   padding: 32px;
   width: 100%;
-  max-width: 420px;
-  max-height: 90vh;
+  max-width: 500px;
+  max-height: 92vh;
   overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
+
 .modalTitle {
   font-family: 'Syne', sans-serif;
   font-weight: 800;
-  font-size: 20px;
+  font-size: 22px;
   color: #003366;
   margin-bottom: 4px;
 }
+
 .modalSub {
   font-size: 13px;
   color: #888;
   margin-bottom: 20px;
 }
+
 .cancelBtn {
   width: 100%;
   padding: 11px;
@@ -269,9 +302,9 @@
   margin-top: 8px;
 }
 
-/* Mobile responsive */
+/* ── Responsive ── */
 @media (max-width: 640px) {
-  .card { flex-direction: column; }
-  .leftPanel { width: 100%; padding: 30px 20px; }
+  .card       { flex-direction: column; }
+  .leftPanel  { width: 100%; padding: 30px 20px; }
   .rightPanel { padding: 24px 20px; }
 }
