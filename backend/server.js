@@ -1,4 +1,3 @@
-const { deactivateInactiveAccounts } = require("./deactivateJob");
 const express    = require("express");
 const cors       = require("cors");
 const bcrypt     = require("bcryptjs");
@@ -13,6 +12,15 @@ const {
   sendMissedSessionAlert,
   sendWelcomeEmail,
 } = require("./emailService");
+const {
+  notifyMissedSession,
+  notifyQRExpired,
+  notifyAtRisk,
+  notifyLecturerScan,
+} = require("./notificationHelper");
+
+// Load deactivation job
+require("./deactivateJob");
 
 const app    = express();
 const PORT   = process.env.PORT || 3001;
@@ -35,7 +43,7 @@ function authenticate(req, res, next) {
 const plain  = (row)  => (row ? { ...row } : row);
 const plains = (rows) => rows.map(plain);
 
-// ── UCC Lecture Halls with GPS ──
+// ── UCC Lecture Halls ──
 const LECTURE_HALLS = {
   "LT 1":            { lat: 5.1061, lng: -1.2771, radius: 80  },
   "LT 2":            { lat: 5.1058, lng: -1.2768, radius: 80  },
@@ -47,41 +55,32 @@ const LECTURE_HALLS = {
   "Main Auditorium": { lat: 5.1070, lng: -1.2780, radius: 120 },
 };
 
-// GET /api/halls
 app.get("/api/halls", (req, res) => {
-  const halls = Object.entries(LECTURE_HALLS).map(([name, data]) => ({ name, ...data }));
-  res.json(halls);
+  res.json(Object.entries(LECTURE_HALLS).map(([name, data]) => ({ name, ...data })));
 });
 
 // ══════════════════════════════════════════════════════
 //  AUTH ROUTES
 // ══════════════════════════════════════════════════════
 
-// POST /api/auth/register
 app.post("/api/auth/register", async (req, res) => {
   const { name, email, password, role, index_number, staff_id, level, dept, programme, courses } = req.body;
-
-  if (!name || !email || !password || !role) {
-    return res.status(400).json({ error: "Please fill in all required fields." });
-  }
+  if (!name || !email || !password || !role) return res.status(400).json({ error: "Please fill in all required fields." });
 
   try {
     const existing = await db.execute({ sql: "SELECT id FROM users WHERE email = ?", args: [email] });
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ error: "An account with this email already exists." });
-    }
+    if (existing.rows.length > 0) return res.status(400).json({ error: "An account with this email already exists." });
 
-    const hashed = bcrypt.hashSync(password, 10);
+    const hashed    = bcrypt.hashSync(password, 10);
     const userResult = await db.execute({
-      sql: "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+      sql: "INSERT INTO users (name, email, password, role, active) VALUES (?, ?, ?, ?, 1)",
       args: [name, email, hashed, role],
     });
     const userId = userResult.lastInsertRowid;
-
     let identifier = "";
 
     if (role === "student") {
-      if (!index_number) return res.status(400).json({ error: "Index number is required for students." });
+      if (!index_number) return res.status(400).json({ error: "Index number is required." });
       identifier = index_number;
       await db.execute({
         sql: "INSERT INTO students (user_id, index_number, level, programme) VALUES (?, ?, ?, ?)",
@@ -91,15 +90,14 @@ app.post("/api/auth/register", async (req, res) => {
       const newStudentId  = newStudentRes.rows[0].id;
       const allCoursesRes = await db.execute({ sql: "SELECT id FROM courses", args: [] });
       if (allCoursesRes.rows.length > 0) {
-        await db.batch(
-          allCoursesRes.rows.map(c => ({ sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [newStudentId, c.id] })),
-          "write"
-        );
+        await db.batch(allCoursesRes.rows.map(c => ({
+          sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [newStudentId, c.id]
+        })), "write");
       }
     }
 
     if (role === "lecturer") {
-      if (!staff_id) return res.status(400).json({ error: "Staff ID is required for lecturers." });
+      if (!staff_id) return res.status(400).json({ error: "Staff ID is required." });
       identifier = staff_id;
       const lecturerResult = await db.execute({
         sql: "INSERT INTO lecturers (user_id, staff_id, dept) VALUES (?, ?, ?)",
@@ -107,31 +105,25 @@ app.post("/api/auth/register", async (req, res) => {
       });
       const lecturerId = lecturerResult.lastInsertRowid;
 
-      if (Array.isArray(courses) && courses.length > 0) {
+      if (Array.isArray(courses) && courses.filter(c => c.name && c.code).length > 0) {
         const validCourses = courses.filter(c => c.name && c.code);
-        if (validCourses.length > 0) {
-          await db.batch(
-            validCourses.map(c => ({ sql: "INSERT OR IGNORE INTO courses (code, name, lecturer_id) VALUES (?, ?, ?)", args: [c.code.toUpperCase().trim(), c.name.trim(), lecturerId] })),
-            "write"
-          );
-          const allStudentsRes = await db.execute({ sql: "SELECT id FROM students", args: [] });
-          const newCoursesRes  = await db.execute({ sql: "SELECT id FROM courses WHERE lecturer_id = ?", args: [lecturerId] });
-          if (allStudentsRes.rows.length > 0 && newCoursesRes.rows.length > 0) {
-            const enrolStmts = [];
-            for (const s of allStudentsRes.rows) {
-              for (const c of newCoursesRes.rows) {
-                enrolStmts.push({ sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [s.id, c.id] });
-              }
-            }
-            await db.batch(enrolStmts, "write");
+        await db.batch(validCourses.map(c => ({
+          sql: "INSERT OR IGNORE INTO courses (code, name, lecturer_id) VALUES (?, ?, ?)",
+          args: [c.code.toUpperCase().trim(), c.name.trim(), lecturerId],
+        })), "write");
+        const allStudentsRes = await db.execute({ sql: "SELECT id FROM students", args: [] });
+        const newCoursesRes  = await db.execute({ sql: "SELECT id FROM courses WHERE lecturer_id = ?", args: [lecturerId] });
+        if (allStudentsRes.rows.length > 0 && newCoursesRes.rows.length > 0) {
+          const stmts = [];
+          for (const s of allStudentsRes.rows) for (const c of newCoursesRes.rows) {
+            stmts.push({ sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [s.id, c.id] });
           }
+          await db.batch(stmts, "write");
         }
       }
     }
 
-    // Send welcome email (non-blocking)
     sendWelcomeEmail(email, name, role, identifier).catch(console.error);
-
     res.json({ message: "Account created successfully. You can now log in." });
 
   } catch (err) {
@@ -140,7 +132,6 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-// POST /api/auth/login
 app.post("/api/auth/login", async (req, res) => {
   const { identifier, password, role } = req.body;
   if (!identifier || !password || !role) return res.status(400).json({ error: "Please fill in all fields." });
@@ -168,10 +159,13 @@ app.post("/api/auth/login", async (req, res) => {
     const valid = bcrypt.compareSync(password, user.password);
     if (!valid) return res.status(401).json({ error: "Incorrect password." });
 
+    if (user.active === 0) {
+      return res.status(403).json({ error: "This account has been deactivated due to one year of inactivity. Please contact your department administrator." });
+    }
+
     await db.execute({ sql: "UPDATE users SET last_active = ? WHERE id = ?", args: [new Date().toISOString(), user.id] });
 
     let profile = { id: user.id, name: user.name, email: user.email, role: user.role };
-
     if (role === "student") {
       const sr = await db.execute({ sql: "SELECT * FROM students WHERE user_id = ?", args: [user.id] });
       const s  = sr.rows[0];
@@ -192,41 +186,27 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// POST /api/auth/forgot-password
 app.post("/api/auth/forgot-password", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email is required." });
-
   try {
     const userRes = await db.execute({ sql: "SELECT * FROM users WHERE email = ?", args: [email] });
     const user    = userRes.rows[0];
-
-    // Always return success to prevent email enumeration
-    if (!user) return res.json({ message: "If an account with that email exists, a reset link has been sent." });
-
+    if (!user) return res.json({ message: "If an account exists, a reset link has been sent." });
     const resetToken  = crypto.randomBytes(32).toString("hex");
-    const resetExpiry = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
-
-    await db.execute({
-      sql: "UPDATE users SET reset_token = ?, reset_expiry = ? WHERE id = ?",
-      args: [resetToken, resetExpiry, user.id],
-    });
-
+    const resetExpiry = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await db.execute({ sql: "UPDATE users SET reset_token = ?, reset_expiry = ? WHERE id = ?", args: [resetToken, resetExpiry, user.id] });
     await sendPasswordReset(user.email, user.name, resetToken);
-    res.json({ message: "If an account with that email exists, a reset link has been sent." });
-
+    res.json({ message: "If an account exists, a reset link has been sent." });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to process request." });
   }
 });
 
-// POST /api/auth/reset-password
 app.post("/api/auth/reset-password", async (req, res) => {
   const { token, password } = req.body;
-  if (!token || !password) return res.status(400).json({ error: "Token and new password are required." });
+  if (!token || !password) return res.status(400).json({ error: "Token and password are required." });
   if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters." });
-
   try {
     const userRes = await db.execute({
       sql: "SELECT * FROM users WHERE reset_token = ? AND reset_expiry > ?",
@@ -234,18 +214,51 @@ app.post("/api/auth/reset-password", async (req, res) => {
     });
     const user = userRes.rows[0];
     if (!user) return res.status(400).json({ error: "This reset link is invalid or has expired." });
-
     const hashed = bcrypt.hashSync(password, 10);
-    await db.execute({
-      sql: "UPDATE users SET password = ?, reset_token = NULL, reset_expiry = NULL WHERE id = ?",
-      args: [hashed, user.id],
-    });
-
+    await db.execute({ sql: "UPDATE users SET password = ?, reset_token = NULL, reset_expiry = NULL WHERE id = ?", args: [hashed, user.id] });
     res.json({ message: "Password reset successfully. You can now log in." });
-
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Failed to reset password." });
+  }
+});
+
+// ══════════════════════════════════════════════════════
+//  NOTIFICATIONS ROUTES
+// ══════════════════════════════════════════════════════
+
+app.get("/api/notifications", authenticate, async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20",
+      args: [req.user.id],
+    });
+    res.json(plains(result.rows));
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load notifications." });
+  }
+});
+
+app.post("/api/notifications/:id/read", authenticate, async (req, res) => {
+  try {
+    await db.execute({
+      sql: "UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?",
+      args: [req.params.id, req.user.id],
+    });
+    res.json({ message: "Marked as read." });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to mark notification." });
+  }
+});
+
+app.post("/api/notifications/read-all", authenticate, async (req, res) => {
+  try {
+    await db.execute({
+      sql: "UPDATE notifications SET is_read = 1 WHERE user_id = ?",
+      args: [req.user.id],
+    });
+    res.json({ message: "All marked as read." });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to mark notifications." });
   }
 });
 
@@ -258,8 +271,7 @@ app.get("/api/courses", authenticate, async (req, res) => {
     if (req.user.role === "lecturer") {
       const result = await db.execute({
         sql: `SELECT c.*, COUNT(e.student_id) as enrolled FROM courses c
-              LEFT JOIN enrolments e ON e.course_id = c.id
-              WHERE c.lecturer_id = ? GROUP BY c.id`,
+              LEFT JOIN enrolments e ON e.course_id = c.id WHERE c.lecturer_id = ? GROUP BY c.id`,
         args: [req.user.lecturerId],
       });
       return res.json(plains(result.rows));
@@ -285,24 +297,19 @@ app.post("/api/courses", authenticate, async (req, res) => {
   if (req.user.role !== "lecturer") return res.status(403).json({ error: "Only lecturers can add courses." });
   const { name, code } = req.body;
   if (!name || !code) return res.status(400).json({ error: "Course name and code are required." });
-
   try {
     const existing = await db.execute({ sql: "SELECT id FROM courses WHERE code = ?", args: [code.toUpperCase().trim()] });
     if (existing.rows.length > 0) return res.status(400).json({ error: "A course with this code already exists." });
-
     const result = await db.execute({
       sql: "INSERT INTO courses (code, name, lecturer_id) VALUES (?, ?, ?)",
       args: [code.toUpperCase().trim(), name.trim(), req.user.lecturerId],
     });
-
     const allStudentsRes = await db.execute({ sql: "SELECT id FROM students", args: [] });
     if (allStudentsRes.rows.length > 0) {
-      await db.batch(
-        allStudentsRes.rows.map(s => ({ sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [s.id, result.lastInsertRowid] })),
-        "write"
-      );
+      await db.batch(allStudentsRes.rows.map(s => ({
+        sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [s.id, result.lastInsertRowid]
+      })), "write");
     }
-
     res.json({ message: "Course added successfully.", courseId: Number(result.lastInsertRowid) });
   } catch (err) {
     res.status(500).json({ error: "Failed to add course." });
@@ -333,27 +340,21 @@ app.get("/api/sessions/today", authenticate, async (req, res) => {
 
 app.post("/api/sessions", authenticate, async (req, res) => {
   if (req.user.role !== "lecturer") return res.status(403).json({ error: "Only lecturers can create sessions." });
-
   try {
     const { course_id, room } = req.body;
     const today    = new Date().toISOString().split("T")[0];
     const hallData = LECTURE_HALLS[room] || {};
-
-    const result = await db.execute({
+    const result   = await db.execute({
       sql: "INSERT INTO sessions (course_id, room, date, start_time, status, hall_lat, hall_lng, hall_radius) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)",
       args: [course_id, room, today, new Date().toTimeString().slice(0, 5), hallData.lat || null, hallData.lng || null, hallData.radius || 100],
     });
-
     const sessionId   = Number(result.lastInsertRowid);
     const studentsRes = await db.execute({ sql: "SELECT student_id FROM enrolments WHERE course_id = ?", args: [course_id] });
-
     if (studentsRes.rows.length > 0) {
-      await db.batch(
-        studentsRes.rows.map(s => ({ sql: "INSERT INTO attendance_records (session_id, student_id, status) VALUES (?, ?, 'absent')", args: [sessionId, s.student_id] })),
-        "write"
-      );
+      await db.batch(studentsRes.rows.map(s => ({
+        sql: "INSERT INTO attendance_records (session_id, student_id, status) VALUES (?, ?, 'absent')", args: [sessionId, s.student_id]
+      })), "write");
     }
-
     res.json({ sessionId, message: "Session created." });
   } catch (err) {
     console.error(err);
@@ -363,7 +364,6 @@ app.post("/api/sessions", authenticate, async (req, res) => {
 
 app.post("/api/sessions/:id/qr", authenticate, async (req, res) => {
   if (req.user.role !== "lecturer") return res.status(403).json({ error: "Only lecturers can generate QR codes." });
-
   try {
     const sessionId              = req.params.id;
     const { lecturer_lat, lecturer_lng } = req.body;
@@ -375,9 +375,9 @@ app.post("/api/sessions/:id/qr", authenticate, async (req, res) => {
       args: [token, expiry, lecturer_lat || null, lecturer_lng || null, sessionId],
     });
 
-    // Schedule QR expiry alert for enrolled students (after 10 mins)
+    // After 10 mins, send QR expiry notifications to absent students
     const sessionRes = await db.execute({
-      sql: `SELECT s.*, c.name as course_name, c.code as course_code FROM sessions s JOIN courses c ON c.id = s.course_id WHERE s.id = ?`,
+      sql: "SELECT s.*, c.name as course_name, c.code as course_code FROM sessions s JOIN courses c ON c.id = s.course_id WHERE s.id = ?",
       args: [sessionId],
     });
     const session = sessionRes.rows[0];
@@ -385,21 +385,18 @@ app.post("/api/sessions/:id/qr", authenticate, async (req, res) => {
     if (session) {
       setTimeout(async () => {
         try {
-          // Get students who have NOT yet scanned
           const absentRes = await db.execute({
-            sql: `SELECT u.email, u.name FROM attendance_records ar
-                  JOIN students st ON st.id = ar.student_id
-                  JOIN users u ON u.id = st.user_id
+            sql: `SELECT u.email, u.name, u.id as user_id FROM attendance_records ar
+                  JOIN students st ON st.id = ar.student_id JOIN users u ON u.id = st.user_id
                   WHERE ar.session_id = ? AND ar.status = 'absent'`,
             args: [sessionId],
           });
           for (const student of absentRes.rows) {
             sendQRExpiryAlert(student.email, student.name, session.course_name, session.course_code).catch(console.error);
+            notifyQRExpired(student.user_id, session.course_name, session.course_code).catch(console.error);
           }
-        } catch (err) {
-          console.error("QR expiry alert error:", err);
-        }
-      }, 10 * 60 * 1000); // fire after 10 minutes
+        } catch (err) { console.error("QR expiry notification error:", err); }
+      }, 10 * 60 * 1000);
     }
 
     res.json({ token, expiry, qrValue: `https://attend-ucc.app/scan/${token}`, locationCaptured: !!(lecturer_lat && lecturer_lng) });
@@ -410,55 +407,45 @@ app.post("/api/sessions/:id/qr", authenticate, async (req, res) => {
 
 app.post("/api/sessions/:id/end", authenticate, async (req, res) => {
   if (req.user.role !== "lecturer") return res.status(403).json({ error: "Only lecturers can end sessions." });
-
   try {
     await db.execute({
       sql: "UPDATE sessions SET status = 'ended', end_time = ? WHERE id = ?",
       args: [new Date().toTimeString().slice(0, 5), req.params.id],
     });
 
-    // Send missed session alerts to absent students
     const sessionId  = req.params.id;
     const sessionRes = await db.execute({
-      sql: `SELECT s.*, c.name as course_name, c.code as course_code, c.id as cid
-            FROM sessions s JOIN courses c ON c.id = s.course_id WHERE s.id = ?`,
+      sql: "SELECT s.*, c.name as course_name, c.code as course_code, c.id as cid FROM sessions s JOIN courses c ON c.id = s.course_id WHERE s.id = ?",
       args: [sessionId],
     });
     const session = sessionRes.rows[0];
 
     if (session) {
-      // Get absent students with their current attendance rate
       const absentRes = await db.execute({
-        sql: `SELECT u.email, u.name, st.id as student_id FROM attendance_records ar
-              JOIN students st ON st.id = ar.student_id
-              JOIN users u ON u.id = st.user_id
+        sql: `SELECT u.email, u.name, u.id as user_id, st.id as student_id FROM attendance_records ar
+              JOIN students st ON st.id = ar.student_id JOIN users u ON u.id = st.user_id
               WHERE ar.session_id = ? AND ar.status = 'absent'`,
         args: [sessionId],
       });
 
       for (const student of absentRes.rows) {
         try {
-          // Calculate current attendance rate for this course
           const rateRes = await db.execute({
-            sql: `SELECT
-                    COUNT(CASE WHEN ar.status IN ('present','late') THEN 1 END) as attended,
-                    COUNT(ar.id) as total
-                  FROM attendance_records ar
-                  JOIN sessions s ON s.id = ar.session_id
+            sql: `SELECT COUNT(CASE WHEN ar.status IN ('present','late') THEN 1 END) as attended, COUNT(ar.id) as total
+                  FROM attendance_records ar JOIN sessions s ON s.id = ar.session_id
                   WHERE s.course_id = ? AND ar.student_id = ? AND s.status = 'ended'`,
             args: [session.cid, student.student_id],
           });
           const rate = rateRes.rows[0];
           const pct  = rate.total > 0 ? Math.round((rate.attended / rate.total) * 100) : 0;
 
-          sendMissedSessionAlert(
-            student.email, student.name,
-            session.course_name, session.course_code,
-            session.date, pct
-          ).catch(console.error);
-        } catch (err) {
-          console.error("Missed session alert error:", err);
-        }
+          sendMissedSessionAlert(student.email, student.name, session.course_name, session.course_code, session.date, pct).catch(console.error);
+          notifyMissedSession(student.user_id, session.course_name, session.course_code, session.date, pct).catch(console.error);
+
+          if (pct < 75) {
+            notifyAtRisk(student.user_id, session.course_name, session.course_code, pct).catch(console.error);
+          }
+        } catch (err) { console.error("Missed session notification error:", err); }
       }
     }
 
@@ -474,14 +461,12 @@ app.post("/api/sessions/:id/end", authenticate, async (req, res) => {
 
 app.post("/api/attendance/scan", authenticate, async (req, res) => {
   if (req.user.role !== "student") return res.status(403).json({ error: "Only students can scan QR codes." });
-
   try {
     const { qr_token, gps_lat, gps_lng, ip_address } = req.body;
 
     const sessionRes = await db.execute({ sql: "SELECT * FROM sessions WHERE qr_token = ?", args: [qr_token] });
     const session    = sessionRes.rows[0];
     if (!session) return res.status(400).json({ error: "Invalid QR code. Please scan the correct code." });
-
     if (new Date() > new Date(session.qr_expiry)) return res.status(400).json({ error: "This QR code has expired. Ask your lecturer to generate a new one." });
     if (session.status !== "active") return res.status(400).json({ error: "This session has already ended." });
 
@@ -499,16 +484,13 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
       if (ipUsedRes.rows.length > 0) return res.status(400).json({ error: "This device has already been used to mark attendance for another student. Proxy attendance is not allowed." });
     }
 
-    // GPS check
     const refLat = session.lecturer_lat || session.hall_lat;
     const refLng = session.lecturer_lng || session.hall_lng;
     const radius = session.hall_radius  || 100;
 
     if (refLat && refLng && gps_lat && gps_lng) {
       const distance = getDistanceMetres(parseFloat(gps_lat), parseFloat(gps_lng), parseFloat(refLat), parseFloat(refLng));
-      if (distance > radius) {
-        return res.status(400).json({ error: `You are ${Math.round(distance)}m away from the classroom. Must be within ${radius}m.` });
-      }
+      if (distance > radius) return res.status(400).json({ error: `You are ${Math.round(distance)}m away from the classroom. Must be within ${radius}m.` });
     }
 
     const sessionStart = new Date(`${session.date}T${session.start_time}`);
@@ -523,6 +505,28 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
     });
 
     await db.execute({ sql: "UPDATE users SET last_active = ? WHERE id = ?", args: [now.toISOString(), req.user.id] });
+
+    // Notify lecturer
+    try {
+      const courseRes    = await db.execute({ sql: "SELECT * FROM courses WHERE id = ?", args: [session.course_id] });
+      const course       = courseRes.rows[0];
+      const lecturerRes  = await db.execute({ sql: "SELECT user_id FROM lecturers WHERE id = ?", args: [course.lecturer_id] });
+      const lecturerUser = lecturerRes.rows[0];
+      const countRes     = await db.execute({
+        sql: "SELECT COUNT(*) as cnt FROM attendance_records WHERE session_id = ? AND status IN ('present','late')",
+        args: [session.id],
+      });
+      const enrolled = await db.execute({ sql: "SELECT COUNT(*) as cnt FROM enrolments WHERE course_id = ?", args: [session.course_id] });
+      const studentRes = await db.execute({ sql: "SELECT name FROM users WHERE id = ?", args: [req.user.id] });
+
+      notifyLecturerScan(
+        lecturerUser.user_id,
+        studentRes.rows[0].name,
+        course.name,
+        countRes.rows[0].cnt,
+        enrolled.rows[0].cnt
+      ).catch(console.error);
+    } catch (err) { console.error("Lecturer notification error:", err); }
 
     res.json({ message: "Attendance marked successfully!", status });
 
@@ -588,7 +592,7 @@ app.get("/api/attendance/course/:id", authenticate, async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════
-//  EMAIL TEST ROUTE
+//  EMAIL TEST + ADMIN ROUTES
 // ══════════════════════════════════════════════════════
 
 app.post("/api/test/email", async (req, res) => {
@@ -602,19 +606,13 @@ app.post("/api/test/email", async (req, res) => {
   }
 });
 
-// ══════════════════════════════════════════════════════
-//  ADMIN ROUTES
-// ══════════════════════════════════════════════════════
-
 app.get("/api/admin/enroll-all", async (req, res) => {
   try {
     const students = await db.execute({ sql: "SELECT id FROM students", args: [] });
     const courses  = await db.execute({ sql: "SELECT id FROM courses",  args: [] });
     const stmts    = [];
-    for (const s of students.rows) {
-      for (const c of courses.rows) {
-        stmts.push({ sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [s.id, c.id] });
-      }
+    for (const s of students.rows) for (const c of courses.rows) {
+      stmts.push({ sql: "INSERT OR IGNORE INTO enrolments (student_id, course_id) VALUES (?, ?)", args: [s.id, c.id] });
     }
     if (stmts.length > 0) await db.batch(stmts, "write");
     res.json({ message: `Done — enrolled ${students.rows.length} students in ${courses.rows.length} courses.` });

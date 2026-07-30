@@ -1,3 +1,4 @@
+import NotificationBell from "../../components/NotificationBell";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { QRCodeSVG } from "qrcode.react";
@@ -34,10 +35,7 @@ function GlobalTopBar({ title, onMenuClick }) {
       <div className={styles.topBarTitle}>{title}</div>
       <div className={styles.topBarRight}>
         <span className={styles.topBarDate}>📅 {today}</span>
-        <button className={styles.notifBtn}>
-          🔔
-          <span className={styles.notifDot} />
-        </button>
+        <NotificationBell />
       </div>
     </div>
   );
