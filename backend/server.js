@@ -26,6 +26,12 @@ const app    = express();
 const PORT   = process.env.PORT || 3001;
 const SECRET = process.env.JWT_SECRET || "attenducc-secret-key-ucc-2025";
 
+// Dedicated signing secret for QR payloads — falls back to reusing SECRET so
+// it works with zero new config, but should get its own value in production
+// so a leaked QR secret can't be used to forge login tokens (or vice versa).
+const QR_SECRET         = process.env.QR_SECRET || SECRET;
+const QR_EXPIRY_MINUTES = Number(process.env.QR_EXPIRY_MINUTES) || 10;
+
 app.use(cors());
 app.use(express.json());
 
@@ -367,40 +373,52 @@ app.post("/api/sessions/:id/qr", authenticate, async (req, res) => {
   try {
     const sessionId              = req.params.id;
     const { lecturer_lat, lecturer_lng } = req.body;
-    const token                  = `UCC-${sessionId}-${Date.now()}`;
-    const expiry                 = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-    await db.execute({
-      sql: "UPDATE sessions SET qr_token = ?, qr_expiry = ?, lecturer_lat = ?, lecturer_lng = ? WHERE id = ?",
-      args: [token, expiry, lecturer_lat || null, lecturer_lng || null, sessionId],
-    });
-
-    // After 10 mins, send QR expiry notifications to absent students
     const sessionRes = await db.execute({
-      sql: "SELECT s.*, c.name as course_name, c.code as course_code FROM sessions s JOIN courses c ON c.id = s.course_id WHERE s.id = ?",
+      sql: `SELECT s.*, c.name as course_name, c.code as course_code, c.id as course_id, c.lecturer_id
+            FROM sessions s JOIN courses c ON c.id = s.course_id WHERE s.id = ?`,
       args: [sessionId],
     });
     const session = sessionRes.rows[0];
+    if (!session) return res.status(404).json({ error: "Session not found." });
 
-    if (session) {
-      setTimeout(async () => {
-        try {
-          const absentRes = await db.execute({
-            sql: `SELECT u.email, u.name, u.id as user_id FROM attendance_records ar
-                  JOIN students st ON st.id = ar.student_id JOIN users u ON u.id = st.user_id
-                  WHERE ar.session_id = ? AND ar.status = 'absent'`,
-            args: [sessionId],
-          });
-          for (const student of absentRes.rows) {
-            sendQRExpiryAlert(student.email, student.name, session.course_name, session.course_code).catch(console.error);
-            notifyQRExpired(student.user_id, session.course_name, session.course_code).catch(console.error);
-          }
-        } catch (err) { console.error("QR expiry notification error:", err); }
-      }, 10 * 60 * 1000);
-    }
+    const lat    = lecturer_lat || session.hall_lat  || null;
+    const lng    = lecturer_lng || session.hall_lng  || null;
+    const radius = session.hall_radius || 80;
+    const expiry = new Date(Date.now() + QR_EXPIRY_MINUTES * 60 * 1000).toISOString();
 
-    res.json({ token, expiry, qrValue: `https://attend-ucc.app/scan/${token}`, locationCaptured: !!(lecturer_lat && lecturer_lng) });
+    // The QR code IS this signed token — no server lookup needed to know what
+    // it means, only to verify it hasn't been forged, expired, or revoked.
+    const qrJWT = jwt.sign(
+      { sessionId: Number(sessionId), courseId: session.course_id, lecturerId: session.lecturer_id, lat, lng, radius },
+      QR_SECRET,
+      { expiresIn: `${QR_EXPIRY_MINUTES}m` }
+    );
+
+    await db.execute({
+      sql: "UPDATE sessions SET qr_token = ?, qr_expiry = ?, lecturer_lat = ?, lecturer_lng = ? WHERE id = ?",
+      args: [qrJWT, expiry, lecturer_lat || null, lecturer_lng || null, sessionId],
+    });
+
+    // After the QR expires, notify students still marked absent
+    setTimeout(async () => {
+      try {
+        const absentRes = await db.execute({
+          sql: `SELECT u.email, u.name, u.id as user_id FROM attendance_records ar
+                JOIN students st ON st.id = ar.student_id JOIN users u ON u.id = st.user_id
+                WHERE ar.session_id = ? AND ar.status = 'absent'`,
+          args: [sessionId],
+        });
+        for (const student of absentRes.rows) {
+          sendQRExpiryAlert(student.email, student.name, session.course_name, session.course_code).catch(console.error);
+          notifyQRExpired(student.user_id, session.course_name, session.course_code).catch(console.error);
+        }
+      } catch (err) { console.error("QR expiry notification error:", err); }
+    }, QR_EXPIRY_MINUTES * 60 * 1000);
+
+    res.json({ token: qrJWT, expiry, qrValue: qrJWT, locationCaptured: !!(lecturer_lat && lecturer_lng) });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Failed to generate QR code." });
   }
 });
@@ -463,18 +481,32 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
   if (req.user.role !== "student") return res.status(403).json({ error: "Only students can scan QR codes." });
   try {
     const { qr_token, gps_lat, gps_lng, ip_address } = req.body;
+    if (!qr_token) return res.status(400).json({ error: "Invalid QR code. Please scan the correct code." });
 
-    const sessionRes = await db.execute({ sql: "SELECT * FROM sessions WHERE qr_token = ?", args: [qr_token] });
+    let payload;
+    try {
+      payload = jwt.verify(qr_token, QR_SECRET);
+    } catch (err) {
+      return res.status(400).json({
+        error: err.name === "TokenExpiredError"
+          ? "This QR code has expired. Ask your lecturer to generate a new one."
+          : "Invalid QR code. Please scan the correct code.",
+      });
+    }
+
+    const sessionRes = await db.execute({ sql: "SELECT * FROM sessions WHERE id = ?", args: [payload.sessionId] });
     const session    = sessionRes.rows[0];
     if (!session) return res.status(400).json({ error: "Invalid QR code. Please scan the correct code." });
-    if (new Date() > new Date(session.qr_expiry)) return res.status(400).json({ error: "This QR code has expired. Ask your lecturer to generate a new one." });
+    // A regenerated QR overwrites sessions.qr_token, so a stale (but still
+    // unexpired/unforged) photographed code stops working immediately.
+    if (session.qr_token !== qr_token) return res.status(400).json({ error: "This QR code is no longer valid. Ask your lecturer for the current code." });
     if (session.status !== "active") return res.status(400).json({ error: "This session has already ended." });
 
     const enrolmentRes = await db.execute({ sql: "SELECT * FROM enrolments WHERE student_id = ? AND course_id = ?", args: [req.user.studentId, session.course_id] });
     if (enrolmentRes.rows.length === 0) return res.status(403).json({ error: "You are not enrolled in this course." });
 
     const existingRes = await db.execute({ sql: "SELECT * FROM attendance_records WHERE session_id = ? AND student_id = ?", args: [session.id, req.user.studentId] });
-    if (existingRes.rows[0]?.status === "present") return res.status(400).json({ error: "You have already marked attendance for this session." });
+    if (["present", "late"].includes(existingRes.rows[0]?.status)) return res.status(400).json({ error: "You have already marked attendance for this session." });
 
     if (ip_address) {
       const ipUsedRes = await db.execute({
@@ -484,12 +516,13 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
       if (ipUsedRes.rows.length > 0) return res.status(400).json({ error: "This device has already been used to mark attendance for another student. Proxy attendance is not allowed." });
     }
 
-    const refLat = session.lecturer_lat || session.hall_lat;
-    const refLng = session.lecturer_lng || session.hall_lng;
-    const radius = session.hall_radius  || 100;
+    if (!gps_lat || !gps_lng) return res.status(400).json({ error: "Location is required to mark attendance. Please enable location access and try again." });
 
-    if (refLat && refLng && gps_lat && gps_lng) {
-      const distance = getDistanceMetres(parseFloat(gps_lat), parseFloat(gps_lng), parseFloat(refLat), parseFloat(refLng));
+    // Compare against the location embedded in the QR at generation time,
+    // not a fresh DB read — that's what "verified against the QR" means.
+    if (payload.lat && payload.lng) {
+      const distance = getDistanceMetres(parseFloat(gps_lat), parseFloat(gps_lng), parseFloat(payload.lat), parseFloat(payload.lng));
+      const radius   = payload.radius || 80;
       if (distance > radius) return res.status(400).json({ error: `You are ${Math.round(distance)}m away from the classroom. Must be within ${radius}m.` });
     }
 

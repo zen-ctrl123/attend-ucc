@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Html5Qrcode } from "html5-qrcode";
-import { validateAttendance } from "../utils/locationValidator";
+import { getCurrentPosition, getPublicIP } from "../utils/locationValidator";
 import { scanAttendance, getCourses, getStudentAttendance } from "../api";
 import NotificationBell from "../components/NotificationBell";
 import styles from "./Dashboard.module.css";
@@ -178,80 +178,103 @@ function DashboardPage({ user }) {
    PAGE: SCAN QR CODE
 ══════════════════════════════════════ */
 function ScanPage({ setPage }) {
-  const [state, setState]             = useState("idle");
+  // scanning -> verifying -> success | scan_failed
+  const [state, setState]             = useState("scanning");
   const [scannedText, setScannedText] = useState("");
-  const [validation, setValidation]   = useState(null);
   const [resultStatus, setResultStatus] = useState("");
   const [scanError, setScanError]     = useState("");
   const scannerRef = useRef(null);
+  const gpsRef      = useRef(null);
+  const ipRef       = useRef(null);
+  const genRef      = useRef(0); // bumped on every (re)start; invalidates stale in-flight starts
+
+  // Camera opens immediately, and GPS/IP capture start in parallel in the
+  // background — neither blocks the other, and neither needs a click.
+  const startCapture = () => {
+    gpsRef.current = getCurrentPosition();
+    ipRef.current  = getPublicIP();
+  };
+
+  // html5-qrcode's .stop() throws SYNCHRONOUSLY (not just a rejected promise)
+  // if called before .start() has fully resolved — which happens whenever a
+  // cleanup fires while the camera is still mid-startup (e.g. React
+  // StrictMode's dev-only double-invoke). A plain .catch() doesn't catch that.
+  const safeStop = (instance) => {
+    try {
+      instance.stop().then(() => instance.clear()).catch(() => {});
+    } catch { /* wasn't running yet */ }
+  };
+
+  // html5-qrcode's .start() is async, and .stop() is only valid once it has
+  // actually resolved — calling .stop() any earlier is a no-op (swallowed by
+  // safeStop above), not a real cancellation. So a stop requested WHILE
+  // .start() is still in flight (React StrictMode's dev-only double-invoke
+  // cleanup, or a fast "Try Again" click) can't rely on stopping the camera
+  // directly; instead this generation counter is checked once .start()
+  // finally resolves, and tears the stream down then if it's since been
+  // superseded — otherwise the old stream would keep running live, unowned.
+  const openCamera = async () => {
+    const myGen = ++genRef.current;
+    setState("scanning");
+    try {
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: 220 },
+        (decodedText) => {
+          if (genRef.current !== myGen) return; // stale scanner instance, ignore
+          safeStop(html5QrCode);
+          scannerRef.current = null;
+          setScannedText(decodedText);
+          setState("verifying");
+
+          (async () => {
+            let pos;
+            try {
+              pos = await gpsRef.current;
+            } catch (err) {
+              setScanError(err.message);
+              setState("scan_failed");
+              return;
+            }
+            const ip = await ipRef.current.catch(() => null);
+            scanAttendance(decodedText, pos.lat, pos.lng, ip)
+              .then(res => { setResultStatus(res.status); setState("success"); })
+              .catch(err => { setScanError(err.message); setState("scan_failed"); });
+          })();
+        },
+        () => {}
+      );
+      if (genRef.current !== myGen) { safeStop(html5QrCode); return; }
+      scannerRef.current = html5QrCode;
+    } catch (err) {
+      if (genRef.current !== myGen) return;
+      setScanError(err.message?.includes("NotAllowedError") || err.name === "NotAllowedError"
+        ? "Camera permission was denied. Please allow camera access and try again."
+        : "Could not start the camera: " + (err.message || err));
+      setState("scan_failed");
+    }
+  };
 
   useEffect(() => {
+    startCapture();
+    openCamera();
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
-      }
+      genRef.current++; // invalidate this mount's in-flight/active scanner
+      const instance = scannerRef.current;
+      scannerRef.current = null;
+      if (instance) safeStop(instance);
     };
   }, []);
 
-  const startValidation = async () => {
-    setState("validating");
-    const result = await validateAttendance();
-    setValidation(result);
-    setState(result.overall ? "ready" : "validation_failed");
-  };
-
-  const openCamera = () => {
-    setState("scanning");
-    setTimeout(async () => {
-      try {
-        const html5QrCode = new Html5Qrcode("qr-reader");
-        scannerRef.current = html5QrCode;
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: 220 },
-          (decodedText) => {
-            html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
-            scannerRef.current = null;
-            const token = decodedText.split("/").pop();
-            setScannedText(decodedText);
-            scanAttendance(token, validation?.gps?.lat || null, validation?.gps?.lng || null, validation?.ip?.ip || null)
-              .then(res => { setResultStatus(res.status); setState("success"); })
-              .catch(err => { setScanError(err.message); setState("scan_failed"); });
-          },
-          () => {}
-        );
-      } catch (err) {
-        setScanError(err.message?.includes("NotAllowedError") || err.name === "NotAllowedError"
-          ? "Camera permission was denied. Please allow camera access and try again."
-          : "Could not start the camera: " + (err.message || err));
-        setState("scan_failed");
-      }
-    }, 100);
-  };
-
-  const reset = () => {
-    if (scannerRef.current) {
-      try {
-        scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
-      } catch { /* already stopped */ }
-      scannerRef.current = null;
-    }
-    setState("idle"); setScannedText(""); setValidation(null); setScanError("");
-  };
-
-  const CheckRow = ({ label, checked, allowed, detail, error }) => {
-    const icon  = !checked ? "⏳" : allowed ? "✅" : "❌";
-    const color = !checked ? "#888" : allowed ? "#1a7a4a" : "#8B0000";
-    return (
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 0", borderBottom: "1px solid #f0f2f5" }}>
-        <span style={{ fontSize: 18, marginTop: 1 }}>{icon}</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, color }}>{label}</div>
-          {detail && <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{detail}</div>}
-          {error  && <div style={{ fontSize: 12, color: "#8B0000", marginTop: 2 }}>{error}</div>}
-        </div>
-      </div>
-    );
+  const retry = () => {
+    genRef.current++; // invalidate the previous attempt's in-flight/active scanner
+    const instance = scannerRef.current;
+    scannerRef.current = null;
+    if (instance) safeStop(instance);
+    setScannedText(""); setScanError("");
+    startCapture();
+    openCamera();
   };
 
   return (
@@ -263,69 +286,19 @@ function ScanPage({ setPage }) {
       <div className={styles.card} style={{ maxWidth: 520, margin: "0 auto" }}>
         <div className={styles.cardTitle} style={{ marginBottom: 20 }}>📸 Attendance Scanner</div>
 
-        {state === "idle" && (
-          <div className={styles.scannerBox}>
-            <div className={styles.scannerIcon}>🔐</div>
-            <div className={styles.scannerText}>
-              AttendUCC will verify you are physically inside the classroom and on the campus network before allowing you to scan.
-            </div>
-            <button className={styles.btnPrimary} onClick={startValidation}>Verify My Location</button>
-          </div>
-        )}
-
-        {state === "validating" && (
-          <div className={styles.scannerBox}>
-            <div className={styles.scannerIcon}>📡</div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: "#003366" }}>
-              Checking your location and network…
-            </div>
-            <div className={styles.scannerText}>Please wait a few seconds.</div>
-          </div>
-        )}
-
-        {(state === "validation_failed" || state === "ready") && validation && (
-          <div style={{ background: "#f8f9fb", border: "1px solid #e0e4ea", borderRadius: 12, padding: "16px 20px", marginBottom: 20 }}>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 14, color: "#003366", marginBottom: 4 }}>
-              🔐 Attendance Verification
-            </div>
-            <CheckRow label="GPS Location" checked={validation.gps.checked} allowed={validation.gps.allowed}
-              detail={validation.gps.checked && validation.gps.allowed ? validation.gps.detail : null}
-              error={validation.gps.error} />
-            <CheckRow label="Campus Network" checked={validation.ip.checked} allowed={validation.ip.allowed}
-              detail={validation.ip.checked && validation.ip.allowed ? validation.ip.reason : null}
-              error={validation.ip.error} />
-          </div>
-        )}
-
-        {state === "validation_failed" && (
-          <div className={`${styles.scannerBox} ${styles.scannerError}`}>
-            <div className={styles.scannerIcon}>🚫</div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: "#8B0000" }}>Attendance Blocked</div>
-            <div className={styles.scannerText} style={{ color: "#8B0000" }}>
-              You must be inside the classroom and on the UCC campus network or mobile data to mark attendance.
-            </div>
-            <button className={styles.btnPrimary} style={{ background: "#8B0000" }} onClick={startValidation}>Try Again</button>
-            <button className={styles.btnSecondary} onClick={reset} style={{ marginTop: 8 }}>Cancel</button>
-          </div>
-        )}
-
-        {state === "ready" && (
-          <div className={`${styles.scannerBox} ${styles.scannerSuccess}`}>
-            <div className={styles.scannerIcon}>✅</div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: "#1a7a4a" }}>Verification Passed!</div>
-            <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
-              You're inside the classroom and on the network. Now scan the QR code.
-            </div>
-            <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }} onClick={openCamera}>Open Camera & Scan</button>
-          </div>
-        )}
-
         {state === "scanning" && (
           <div>
             <div id="qr-reader" style={{ width: "100%", borderRadius: 10, overflow: "hidden" }} />
-            <div style={{ textAlign: "center", marginTop: 14 }}>
-              <button className={styles.btnSecondary} onClick={reset}>Cancel</button>
+          </div>
+        )}
+
+        {state === "verifying" && (
+          <div className={styles.scannerBox}>
+            <div className={styles.scannerIcon}>📡</div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: "#003366" }}>
+              Verifying your location…
             </div>
+            <div className={styles.scannerText}>Please wait a moment.</div>
           </div>
         )}
 
@@ -334,7 +307,7 @@ function ScanPage({ setPage }) {
             <div className={styles.scannerIcon}>⚠️</div>
             <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: "#8B0000" }}>Couldn't Mark Attendance</div>
             <div className={styles.scannerText} style={{ color: "#8B0000" }}>{scanError}</div>
-            <button className={styles.btnPrimary} style={{ background: "#8B0000" }} onClick={reset}>Try Again</button>
+            <button className={styles.btnPrimary} style={{ background: "#8B0000" }} onClick={retry}>Try Again</button>
           </div>
         )}
 
@@ -347,7 +320,7 @@ function ScanPage({ setPage }) {
             </div>
             <div style={{ fontSize: 11, color: "#aaa", wordBreak: "break-all" }}>{scannedText}</div>
             <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }}
-              onClick={() => { reset(); setPage("Dashboard"); }}>
+              onClick={() => setPage("Dashboard")}>
               Done — Go to Dashboard
             </button>
           </div>
@@ -357,9 +330,8 @@ function ScanPage({ setPage }) {
       <div className={styles.card} style={{ maxWidth: 520, margin: "20px auto 0" }}>
         <div className={styles.cardTitle} style={{ marginBottom: 16 }}>ℹ️ How Verification Works</div>
         {[
-          ["📍", "GPS check",     "Confirms you're within metres of the lecture room"],
-          ["📶", "Network check", "Confirms you're on UCC Wi-Fi or Ghanaian mobile data"],
-          ["📱", "QR scan",       "Scans the unique code your lecturer displays"],
+          ["📍", "GPS check", "Automatically confirms you're within metres of the lecture room"],
+          ["📱", "QR scan",   "Scans the unique code your lecturer displays"],
         ].map(([icon, title, desc]) => (
           <div key={title} style={{ display: "flex", gap: 14, padding: "10px 0", borderBottom: "1px solid #f0f2f5" }}>
             <span style={{ fontSize: 20 }}>{icon}</span>

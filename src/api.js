@@ -3,6 +3,8 @@
 //  src/api.js
 // ============================================================
 
+import { getCurrentPosition } from "./utils/locationValidator";
+
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 function getToken() {
@@ -107,15 +109,11 @@ export async function generateQR(sessionId) {
   let lecturer_lat = null;
   let lecturer_lng = null;
   try {
-    const pos = await new Promise((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true, timeout: 8000, maximumAge: 0,
-      });
-    });
-    lecturer_lat = pos.coords.latitude;
-    lecturer_lng = pos.coords.longitude;
+    const pos = await getCurrentPosition();
+    lecturer_lat = pos.lat;
+    lecturer_lng = pos.lng;
   } catch {
-    // GPS unavailable — proceed without location
+    // GPS unavailable — proceed without location, backend falls back to the room's fixed coords
   }
 
   const res = await fetch(`${BASE_URL}/sessions/${sessionId}/qr`, {
