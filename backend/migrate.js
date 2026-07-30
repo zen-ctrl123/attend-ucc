@@ -1,7 +1,7 @@
 // ============================================================
-//  AttendUCC — Database Migration
+//  AttendUCC — Migration: Add active column + deactivation support
 //  backend/migrate.js
-//  Run once: node migrate.js
+//  Run: node migrate.js
 // ============================================================
 
 const { db, initDatabase } = require("./database");
@@ -10,9 +10,13 @@ async function migrate() {
   console.log("Running database migrations...");
 
   const migrations = [
-    `ALTER TABLE users ADD COLUMN last_active   TEXT`,
-    `ALTER TABLE users ADD COLUMN reset_token   TEXT`,
-    `ALTER TABLE users ADD COLUMN reset_expiry  TEXT`,
+    // Core columns
+    `ALTER TABLE users ADD COLUMN last_active  TEXT`,
+    `ALTER TABLE users ADD COLUMN reset_token  TEXT`,
+    `ALTER TABLE users ADD COLUMN reset_expiry TEXT`,
+    // Active flag — 1 = active, 0 = deactivated
+    `ALTER TABLE users ADD COLUMN active       INTEGER DEFAULT 1`,
+    // Session GPS columns
     `ALTER TABLE sessions ADD COLUMN lecturer_lat  REAL`,
     `ALTER TABLE sessions ADD COLUMN lecturer_lng  REAL`,
     `ALTER TABLE sessions ADD COLUMN hall_lat      REAL`,
@@ -31,6 +35,14 @@ async function migrate() {
         console.error(`❌ Failed: ${sql}\n   ${err.message}`);
       }
     }
+  }
+
+  // Set all existing users to active = 1
+  try {
+    await db.execute({ sql: "UPDATE users SET active = 1 WHERE active IS NULL", args: [] });
+    console.log("✅ Set all existing users to active");
+  } catch (err) {
+    console.log("⏭  active column update skipped:", err.message);
   }
 
   console.log("\nMigration complete.");

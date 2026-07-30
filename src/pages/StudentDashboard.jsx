@@ -337,13 +337,15 @@ function ScanPage() {
         {state === "success" && (
           <div className={`${styles.scannerBox} ${styles.scannerSuccess}`}>
             <div className={styles.scannerIcon}>🎉</div>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: "#1a7a4a" }}>
-              {resultStatus === "late" ? "Marked Present (Late)" : "Attendance Marked!"}
-            </div>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: "#1a7a4a" }}>Attendance Marked!</div>
             <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
-              You've been recorded as {resultStatus === "late" ? "late" : "present"} for this session.
+             You've been recorded as present for <strong>{ACTIVE_SESSION.course}</strong>.
             </div>
-            <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }} onClick={reset}>Done</button>
+            <div style={{ fontSize: 11, color: "#aaa", wordBreak: "break-all" }}>{scannedText}</div>
+            <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }}
+              onClick={() => { reset(); setPage("Dashboard"); }}>
+              Done — Go to Dashboard
+            </button>
           </div>
         )}
       </div>
