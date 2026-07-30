@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { Html5Qrcode } from "html5-qrcode";
 import { validateAttendance } from "../utils/locationValidator";
 import { scanAttendance, getCourses, getStudentAttendance } from "../api";
+import NotificationBell from "../components/NotificationBell";
 import styles from "./Dashboard.module.css";
 
 function initials(name) {
@@ -26,7 +27,7 @@ function GlobalTopBar({ title, onMenuClick }) {
       <div className={styles.topBarTitle}>{title}</div>
       <div className={styles.topBarRight}>
         <span className={styles.topBarDate}>📅 {today}</span>
-        <button className={styles.notifBtn}>🔔<span className={styles.notifDot} /></button>
+        <NotificationBell />
       </div>
     </div>
   );
