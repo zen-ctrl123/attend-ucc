@@ -176,7 +176,7 @@ function DashboardPage({ user }) {
 /* ══════════════════════════════════════
    PAGE: SCAN QR CODE
 ══════════════════════════════════════ */
-function ScanPage() {
+function ScanPage({ setPage }) {
   const [state, setState]             = useState("idle");
   const [scannedText, setScannedText] = useState("");
   const [validation, setValidation]   = useState(null);
@@ -210,6 +210,7 @@ function ScanPage() {
           { fps: 10, qrbox: 220 },
           (decodedText) => {
             html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
+            scannerRef.current = null;
             const token = decodedText.split("/").pop();
             setScannedText(decodedText);
             scanAttendance(token, validation?.gps?.lat || null, validation?.gps?.lng || null, validation?.ip?.ip || null)
@@ -229,7 +230,9 @@ function ScanPage() {
 
   const reset = () => {
     if (scannerRef.current) {
-      scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
+      try {
+        scannerRef.current.stop().then(() => scannerRef.current.clear()).catch(() => {});
+      } catch { /* already stopped */ }
       scannerRef.current = null;
     }
     setState("idle"); setScannedText(""); setValidation(null); setScanError("");
@@ -339,7 +342,7 @@ function ScanPage() {
             <div className={styles.scannerIcon}>🎉</div>
             <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: "#1a7a4a" }}>Attendance Marked!</div>
             <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
-             You've been recorded as present for <strong>{ACTIVE_SESSION.course}</strong>.
+             You've been recorded as {resultStatus === "late" ? "late" : "present"} for this session.
             </div>
             <div style={{ fontSize: 11, color: "#aaa", wordBreak: "break-all" }}>{scannedText}</div>
             <button className={styles.btnPrimary} style={{ background: "#1a7a4a" }}
@@ -544,7 +547,7 @@ export default function StudentDashboard() {
           drawerOpen={drawerOpen} closeDrawer={() => setDrawerOpen(false)} />
         <main className={styles.main}>
           {page === "Dashboard"  && <DashboardPage  user={user} />}
-          {page === "Scan"       && <ScanPage />}
+          {page === "Scan"       && <ScanPage setPage={setPage} />}
           {page === "Attendance" && <AttendancePage />}
           {page === "Records"    && <RecordsPage />}
           {page === "Profile"    && <ProfilePage user={user} />}
