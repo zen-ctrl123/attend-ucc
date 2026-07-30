@@ -498,11 +498,20 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
     const diffMinutes  = (now - sessionStart) / 60000;
     const status       = diffMinutes > 15 ? "late" : "present";
 
-    await db.execute({
-      sql: `UPDATE attendance_records SET status = ?, scanned_at = ?, gps_lat = ?, gps_lng = ?, ip_address = ?
-            WHERE session_id = ? AND student_id = ?`,
-      args: [status, now.toISOString(), gps_lat ?? null, gps_lng ?? null, ip_address ?? null, session.id, req.user.studentId],
-    });
+    if (existingRes.rows.length === 0) {
+      // Student enrolled after the session was created, so no seeded row exists yet.
+      await db.execute({
+        sql: `INSERT INTO attendance_records (session_id, student_id, status, scanned_at, gps_lat, gps_lng, ip_address)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        args: [session.id, req.user.studentId, status, now.toISOString(), gps_lat ?? null, gps_lng ?? null, ip_address ?? null],
+      });
+    } else {
+      await db.execute({
+        sql: `UPDATE attendance_records SET status = ?, scanned_at = ?, gps_lat = ?, gps_lng = ?, ip_address = ?
+              WHERE session_id = ? AND student_id = ?`,
+        args: [status, now.toISOString(), gps_lat ?? null, gps_lng ?? null, ip_address ?? null, session.id, req.user.studentId],
+      });
+    }
 
     await db.execute({ sql: "UPDATE users SET last_active = ? WHERE id = ?", args: [now.toISOString(), req.user.id] });
 
@@ -634,3 +643,4 @@ initDatabase()
     console.error("❌ Failed to initialize database:", err);
     process.exit(1);
   });
+  

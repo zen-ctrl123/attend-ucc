@@ -15,7 +15,7 @@ import {
 import styles from "./Dashboard.module.css";
 
 function initials(name) {
-  return name.split(" ").map(w => w[0]).slice(0, 2).join("");
+  return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
 /* ── GLOBAL TOP BAR (logo + brand + page title + date/notif) ── */
@@ -195,9 +195,9 @@ function SessionsPage() {
   const [creating, setCreating]     = useState(false);
   const [error, setError]           = useState("");
 
-  const loadSessions = () => {
-    setLoading(true);
-    getTodaySessions()
+  const loadSessions = (silent = false) => {
+    if (!silent) setLoading(true);
+    return getTodaySessions()
       .then(data => {
         setSessions(data);
         setSelected(prev => {
@@ -205,8 +205,8 @@ function SessionsPage() {
           return stillThere || data[0] || null;
         });
       })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch(err => { if (!silent) setError(err.message); })
+      .finally(() => { if (!silent) setLoading(false); });
   };
 
   useEffect(() => {
@@ -219,6 +219,17 @@ function SessionsPage() {
     setQrData(null);
     getSessionAttendance(selected.id).then(setStudents).catch(() => setStudents([]));
   }, [selected?.id]);
+
+  // Poll for new scans while the session is live, so the lecturer sees
+  // attendance update without having to switch sessions or reload.
+  useEffect(() => {
+    if (!selected || selected.status !== "active") return;
+    const interval = setInterval(() => {
+      loadSessions(true);
+      getSessionAttendance(selected.id).then(setStudents).catch(() => {});
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [selected?.id, selected?.status]);
 
   const handleCreateSession = async (e) => {
     e.preventDefault();
@@ -257,6 +268,27 @@ function SessionsPage() {
     } catch (err) {
       setError(err.message);
     }
+  };
+
+  const handleExport = () => {
+    if (!selected || students.length === 0) return;
+    const header = ["Index Number", "Student Name", "Time Scanned", "Status"];
+    const rows = students.map(s => [
+      s.index_number,
+      s.student_name,
+      s.scanned_at ? new Date(s.scanned_at).toLocaleTimeString() : "",
+      s.status,
+    ]);
+    const csv = [header, ...rows]
+      .map(row => row.map(field => `"${String(field ?? "").replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selected.course_code}_${selected.room}_attendance.csv`.replace(/\s+/g, "_");
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (loading) return <div className={styles.content}><div className={styles.emptyState}>Loading sessions…</div></div>;
@@ -404,7 +436,8 @@ function SessionsPage() {
         <div className={styles.card} style={{ marginTop: 20 }}>
           <div className={styles.cardHeader}>
             <div className={styles.cardTitle}>👥 Student Attendance — {selected.course_name}</div>
-            <button className={styles.btnPrimary} style={{ fontSize: 12, padding: "7px 14px" }}>⬇ Export</button>
+            <button className={styles.btnPrimary} style={{ fontSize: 12, padding: "7px 14px" }}
+              onClick={handleExport} disabled={students.length === 0}>⬇ Export</button>
           </div>
           {students.length === 0 ? (
             <div className={styles.emptyState}>No attendance records yet for this session.</div>
@@ -521,10 +554,10 @@ function RecordsPage() {
                   <tr><th>Name</th><th>Index Number</th><th>Attended</th><th>Rate</th></tr>
                 </thead>
                 <tbody>
-                  {report.students.map((s, i) => {
+                  {report.students.map((s) => {
                     const pct = s.total > 0 ? Math.round(s.attended / s.total * 100) : 0;
                     return (
-                      <tr key={i}>
+                      <tr key={s.index_number}>
                         <td style={{ fontWeight: 600 }}>{s.name}</td>
                         <td style={{ color: "#888" }}>{s.index_number}</td>
                         <td>{s.attended}/{s.total}</td>
