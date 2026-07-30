@@ -1,4 +1,4 @@
-import NotificationBell from "../../components/NotificationBell";
+import NotificationBell from "../components/NotificationBell";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { QRCodeSVG } from "qrcode.react";
