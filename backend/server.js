@@ -46,6 +46,11 @@ function authenticate(req, res, next) {
   }
 }
 
+// Emails are case-insensitive at every real provider, but SQLite's UNIQUE
+// constraint is case-sensitive by default — without this, "A@x.com" and
+// "a@x.com" register as two separate accounts.
+const normalizeEmail = (email) => (email || "").trim().toLowerCase();
+
 const plain  = (row)  => (row ? { ...row } : row);
 const plains = (rows) => rows.map(plain);
 
@@ -70,7 +75,8 @@ app.get("/api/halls", (req, res) => {
 // ══════════════════════════════════════════════════════
 
 app.post("/api/auth/register", async (req, res) => {
-  const { name, email, password, role, index_number, staff_id, level, dept, programme, courses } = req.body;
+  const { name, password, role, index_number, staff_id, level, dept, programme, courses } = req.body;
+  const email = normalizeEmail(req.body.email);
   if (!name || !email || !password || !role) return res.status(400).json({ error: "Please fill in all required fields." });
 
   try {
@@ -143,7 +149,7 @@ app.post("/api/auth/login", async (req, res) => {
   if (!identifier || !password || !role) return res.status(400).json({ error: "Please fill in all fields." });
 
   try {
-    let userRes = await db.execute({ sql: "SELECT * FROM users WHERE email = ? AND role = ?", args: [identifier, role] });
+    let userRes = await db.execute({ sql: "SELECT * FROM users WHERE email = ? AND role = ?", args: [normalizeEmail(identifier), role] });
     let user    = userRes.rows[0];
 
     if (!user) {
@@ -193,7 +199,7 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.post("/api/auth/forgot-password", async (req, res) => {
-  const { email } = req.body;
+  const email = normalizeEmail(req.body.email);
   if (!email) return res.status(400).json({ error: "Email is required." });
   try {
     const userRes = await db.execute({ sql: "SELECT * FROM users WHERE email = ?", args: [email] });
