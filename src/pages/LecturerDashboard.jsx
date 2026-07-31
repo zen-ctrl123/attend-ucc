@@ -37,7 +37,7 @@ function GlobalTopBar({ title, onMenuClick }) {
           <div className={styles.topBarBrandSub}>Lecturer Portal</div>
         </div>
       </div>
-      <div className={styles.topBarTitle}>{title}</div>
+      {title && <div className={styles.topBarTitle}>{title}</div>}
       <div className={styles.topBarRight}>
         <span className={styles.topBarDate} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Calendar size={14} />
@@ -635,7 +635,7 @@ export default function LecturerDashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const titles = {
-    Dashboard: "Dashboard",
+    Dashboard: "",
     Sessions:  "Sessions & QR Code",
     Records:   "Attendance Records",
     Reports:   "Reports & Analytics",

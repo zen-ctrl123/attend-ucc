@@ -579,6 +579,9 @@
     row-gap: 6px;
     column-gap: 10px;
   }
+  .topBar:not(:has(.topBarTitle)) {
+    row-gap: 0;
+  }
   .topBarBrand {
     grid-area: brand;
     min-width: 0;
