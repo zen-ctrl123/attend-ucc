@@ -247,6 +247,7 @@
   font-size: 13px;
   color: rgba(255,255,255,0.75);
 }
+.dateShort { display: none; }
 
 .notifBtn {
   width: 36px;
@@ -567,25 +568,51 @@
   .profileGrid { grid-template-columns: 1fr; }
 
   .topBar {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "brand right"
+      "title title";
+    align-items: center;
     height: auto;
     padding: 10px 16px;
     row-gap: 6px;
+    column-gap: 10px;
   }
   .topBarBrand {
-    order: 1;
+    grid-area: brand;
+    min-width: 0;
+    gap: 8px;
   }
-
+  .topBarBrand > div:last-child {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .topBarBrandTitle, .topBarBrandSub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .topBarBrandTitle { font-size: 15px; }
+  .topBarLogo { width: 30px; height: 30px; }
   .topBarRight {
-    order: 2;
+    grid-area: right;
+    justify-self: end;
   }
   .topBarTitle {
-    order: 3;
+    grid-area: title;
     width: 100%;
     font-size: 15px;
     text-align: left;
   }
   .topBarDate {
-    display: none;
+    font-size: 12px;
+    white-space: nowrap;
   }
+  .dateFull  { display: none; }
+  .dateShort { display: inline; }
+}
+
+@media (max-width: 380px) {
+  .topBarBrandSub { display: none; }
 }

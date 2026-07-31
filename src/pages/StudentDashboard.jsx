@@ -16,7 +16,8 @@ function initials(name) {
 
 /* ── GLOBAL TOP BAR ── */
 function GlobalTopBar({ title, onMenuClick }) {
-  const today = new Date().toLocaleDateString("en-GH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const todayFull  = new Date().toLocaleDateString("en-GH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const todayShort = new Date().toLocaleDateString("en-GH", { day: "numeric", month: "short" });
   return (
     <div className={styles.topBar}>
       <div className={styles.topBarBrand}>
@@ -31,7 +32,9 @@ function GlobalTopBar({ title, onMenuClick }) {
       <div className={styles.topBarTitle}>{title}</div>
       <div className={styles.topBarRight}>
         <span className={styles.topBarDate} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <Calendar size={14} />{today}
+          <Calendar size={14} />
+          <span className={styles.dateFull}>{todayFull}</span>
+          <span className={styles.dateShort}>{todayShort}</span>
         </span>
         <NotificationBell />
       </div>
@@ -513,7 +516,7 @@ export default function StudentDashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const titles = {
-    Dashboard:  `Welcome, ${user.name.split(" ")[0]}`,
+    Dashboard:  "Dashboard",
     Scan:       "Scan QR Code",
     Attendance: "My Attendance",
     Records:    "My Records",

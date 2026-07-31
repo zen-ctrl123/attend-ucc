@@ -18,8 +18,22 @@ function authHeaders() {
   };
 }
 
+let sessionExpiredHandled = false;
+
 async function handleResponse(res) {
-  const data = await res.json();
+  // A 401 on a request that carried a token means the session itself is
+  // dead (expired/invalid), not a rejected value — e.g. a wrong password
+  // on /auth/login is also a 401, but that request never carries a token.
+  // Without this, an expired session just leaves the user stuck looking
+  // logged in with every page silently failing to load.
+  if (res.status === 401 && getToken() && !sessionExpiredHandled) {
+    sessionExpiredHandled = true;
+    localStorage.removeItem("attenducc_token");
+    localStorage.removeItem("attenducc_user");
+    alert("Your session has expired. Please log in again.");
+    window.location.reload();
+  }
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Something went wrong.");
   return data;
 }
