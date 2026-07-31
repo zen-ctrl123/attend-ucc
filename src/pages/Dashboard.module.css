@@ -148,10 +148,11 @@
 }
 
 .navIcon {
-  font-size: 18px;
   width: 22px;
-  text-align: center;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sidebarBottom {

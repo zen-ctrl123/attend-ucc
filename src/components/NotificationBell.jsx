@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { Bell, Info, CheckCircle2, AlertTriangle, AlertOctagon, Inbox, RefreshCw } from "lucide-react";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
@@ -15,10 +16,10 @@ function authHeaders() {
 
 // Type colours
 const TYPE_STYLES = {
-  info:    { bg: "#e6f0ff", border: "#003366", icon: "ℹ️",  color: "#003366" },
-  success: { bg: "#e6f9f0", border: "#1a7a4a", icon: "✅",  color: "#1a7a4a" },
-  warning: { bg: "#fff8e6", border: "#C9A84C", icon: "⚠️",  color: "#b07800" },
-  danger:  { bg: "#fdecea", border: "#8B0000", icon: "🚨",  color: "#8B0000" },
+  info:    { bg: "#e6f0ff", border: "#003366", icon: Info,          color: "#003366" },
+  success: { bg: "#e6f9f0", border: "#1a7a4a", icon: CheckCircle2,  color: "#1a7a4a" },
+  warning: { bg: "#fff8e6", border: "#C9A84C", icon: AlertTriangle, color: "#b07800" },
+  danger:  { bg: "#fdecea", border: "#8B0000", icon: AlertOctagon,  color: "#8B0000" },
 };
 
 function timeAgo(dateStr) {
@@ -101,7 +102,7 @@ export default function NotificationBell() {
           transition: "background 0.2s",
         }}
       >
-        🔔
+        <Bell size={17} />
         {unreadCount > 0 && (
           <span style={{
             position: "absolute", top: 4, right: 4,
@@ -134,8 +135,8 @@ export default function NotificationBell() {
             padding: "14px 18px", borderBottom: "1px solid #f0f2f5",
             background: "#003366",
           }}>
-            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 14, color: "#fff" }}>
-              🔔 Notifications {unreadCount > 0 && (
+            <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 14, color: "#fff", display: "flex", alignItems: "center", gap: 7 }}>
+              <Bell size={15} />Notifications {unreadCount > 0 && (
                 <span style={{ background: "#8B0000", color: "#fff", borderRadius: 999, padding: "1px 7px", fontSize: 11, marginLeft: 6 }}>
                   {unreadCount} new
                 </span>
@@ -159,13 +160,14 @@ export default function NotificationBell() {
 
             {!loading && notifications.length === 0 && (
               <div style={{ padding: 32, textAlign: "center" }}>
-                <div style={{ fontSize: 32, marginBottom: 10 }}>📭</div>
+                <div style={{ marginBottom: 10, display: "flex", justifyContent: "center", color: "#ccc" }}><Inbox size={32} /></div>
                 <div style={{ color: "#aaa", fontSize: 13 }}>No notifications yet</div>
               </div>
             )}
 
             {!loading && notifications.map(n => {
               const style = TYPE_STYLES[n.type] || TYPE_STYLES.info;
+              const TypeIcon = style.icon;
               return (
                 <div key={n.id}
                   onClick={() => !n.is_read && markRead(n.id)}
@@ -179,7 +181,7 @@ export default function NotificationBell() {
                   }}
                 >
                   <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                    <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{style.icon}</span>
+                    <span style={{ flexShrink: 0, marginTop: 1, color: style.color }}><TypeIcon size={18} /></span>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: n.is_read ? "#555" : style.color, marginBottom: 3 }}>
                         {n.title}
@@ -201,8 +203,9 @@ export default function NotificationBell() {
             <button onClick={fetchNotifications} style={{
               background: "transparent", border: "none", color: "#003366",
               fontSize: 12, cursor: "pointer", fontWeight: 600,
+              display: "inline-flex", alignItems: "center", gap: 5,
             }}>
-              🔄 Refresh
+              <RefreshCw size={12} />Refresh
             </button>
           </div>
         </div>

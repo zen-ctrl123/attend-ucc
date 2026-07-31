@@ -12,6 +12,10 @@ import {
   getSessionAttendance,
   getCourseReport,
 } from "../api";
+import {
+  Menu, Calendar, Home, QrCode, ClipboardList, BarChart3, User, LogOut,
+  AlertTriangle, Inbox, Plus, Clock, Lock, Users, Download, Radio,
+} from "lucide-react";
 import styles from "./Dashboard.module.css";
 
 function initials(name) {
@@ -24,7 +28,7 @@ function GlobalTopBar({ title, onMenuClick }) {
   return (
     <div className={styles.topBar}>
       <div className={styles.topBarBrand}>
-        <button className={styles.menuBtn} onClick={onMenuClick} aria-label="Open menu">☰</button>
+        <button className={styles.menuBtn} onClick={onMenuClick} aria-label="Open menu"><Menu size={22} /></button>
         <img src="/ucc-logo.png" alt="UCC" className={styles.topBarLogo}
           onError={e => e.target.style.display = "none"} />
         <div>
@@ -34,7 +38,9 @@ function GlobalTopBar({ title, onMenuClick }) {
       </div>
       <div className={styles.topBarTitle}>{title}</div>
       <div className={styles.topBarRight}>
-        <span className={styles.topBarDate}>📅 {today}</span>
+        <span className={styles.topBarDate} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Calendar size={14} />{today}
+        </span>
         <NotificationBell />
       </div>
     </div>
@@ -44,11 +50,11 @@ function GlobalTopBar({ title, onMenuClick }) {
 /* ── SIDEBAR ── */
 function Sidebar({ active, setActive, logout, drawerOpen, closeDrawer }) {
   const navItems = [
-    { key: "Dashboard",  icon: "🏠", label: "Dashboard"          },
-    { key: "Sessions",   icon: "📱", label: "Sessions & QR Code"  },
-    { key: "Records",    icon: "📋", label: "Attendance Records"  },
-    { key: "Reports",    icon: "📊", label: "Reports"             },
-    { key: "Profile",    icon: "👤", label: "Profile"             },
+    { key: "Dashboard",  icon: Home,          label: "Dashboard"          },
+    { key: "Sessions",   icon: QrCode,        label: "Sessions & QR Code"  },
+    { key: "Records",    icon: ClipboardList, label: "Attendance Records"  },
+    { key: "Reports",    icon: BarChart3,     label: "Reports"             },
+    { key: "Profile",    icon: User,          label: "Profile"             },
   ];
 
   const handleNavClick = (key) => {
@@ -66,7 +72,7 @@ function Sidebar({ active, setActive, logout, drawerOpen, closeDrawer }) {
             <button key={item.key}
               className={`${styles.navItem} ${active === item.key ? styles.navItemActive : ""}`}
               onClick={() => handleNavClick(item.key)}>
-              <span className={styles.navIcon}>{item.icon}</span>
+              <span className={styles.navIcon}><item.icon size={18} /></span>
               {item.label}
             </button>
           ))}
@@ -74,7 +80,7 @@ function Sidebar({ active, setActive, logout, drawerOpen, closeDrawer }) {
 
         <div className={styles.sidebarBottom}>
           <button className={styles.logoutBtn} onClick={logout}>
-            <span className={styles.navIcon}>🚪</span>
+            <span className={styles.navIcon}><LogOut size={18} /></span>
             Logout
           </button>
         </div>
@@ -99,7 +105,7 @@ function DashboardPage() {
   }, []);
 
   if (loading) return <div className={styles.content}><div className={styles.emptyState}>Loading today's sessions…</div></div>;
-  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}>⚠️ {error}</div></div>;
+  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}><AlertTriangle size={18} />{error}</div></div>;
 
   const active        = sessions.filter(s => s.status === "active");
   const totalEnrolled = sessions.reduce((a, s) => a + (s.enrolled || 0), 0);
@@ -110,7 +116,8 @@ function DashboardPage() {
 
       {active.length > 0 && (
         <div className={styles.alertBanner}>
-          🟢 <strong>{active.length} session{active.length !== 1 ? "s" : ""} in progress</strong> — students can currently scan attendance
+          <Radio size={18} />
+          <span><strong>{active.length} session{active.length !== 1 ? "s" : ""} in progress</strong> — students can currently scan attendance</span>
         </div>
       )}
 
@@ -135,11 +142,11 @@ function DashboardPage() {
 
       <div className={styles.card}>
         <div className={styles.cardHeader}>
-          <div className={styles.cardTitle}>📅 Today's Schedule</div>
+          <div className={styles.cardTitle}><Calendar size={16} />Today's Schedule</div>
         </div>
         {sessions.length === 0 ? (
           <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>📭</div>
+            <div className={styles.emptyIcon}><Inbox size={40} /></div>
             No sessions yet today. Go to "Sessions &amp; QR Code" to start one.
           </div>
         ) : (
@@ -166,7 +173,7 @@ function DashboardPage() {
                   </td>
                   <td>
                     <span className={`${styles.badge} ${s.status === "active" ? styles.badgeActive : styles.badgeEnded}`}>
-                      {s.status === "active" ? "🟢 Active" : "Ended"}
+                      {s.status === "active" ? "Active" : "Ended"}
                     </span>
                   </td>
                 </tr>
@@ -299,13 +306,13 @@ function SessionsPage() {
     <div className={styles.content}>
       {error && (
         <div className={`${styles.alertBanner} ${styles.danger}`} style={{ marginBottom: 16 }}>
-          ⚠️ {error}
+          <AlertTriangle size={18} />{error}
         </div>
       )}
 
       <div style={{ marginBottom: 20 }}>
         <button className={styles.btnPrimary} onClick={() => setShowNewForm(v => !v)}>
-          {showNewForm ? "Cancel" : "➕ New Session"}
+          {showNewForm ? "Cancel" : <><Plus size={14} />New Session</>}
         </button>
       </div>
 
@@ -338,7 +345,7 @@ function SessionsPage() {
       {sessions.length === 0 ? (
         <div className={styles.card}>
           <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>📭</div>
+            <div className={styles.emptyIcon}><Inbox size={40} /></div>
             No sessions yet today. Click "New Session" to start one.
           </div>
         </div>
@@ -347,7 +354,7 @@ function SessionsPage() {
           {/* Session list */}
           <div className={styles.card} style={{ margin: 0 }}>
             <div className={styles.cardHeader}>
-              <div className={styles.cardTitle}>📋 Today's Sessions</div>
+              <div className={styles.cardTitle}><ClipboardList size={16} />Today's Sessions</div>
             </div>
             {sessions.map(s => (
               <div key={s.id}
@@ -376,7 +383,7 @@ function SessionsPage() {
           {selected && (
             <div className={styles.card} style={{ margin: 0 }}>
               <div className={styles.cardHeader}>
-                <div className={styles.cardTitle}>📱 QR Code — {selected.course_code}</div>
+                <div className={styles.cardTitle}><QrCode size={16} />QR Code — {selected.course_code}</div>
               </div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#003366" }}>{selected.course_name}</div>
@@ -405,7 +412,9 @@ function SessionsPage() {
                       </div>
                       <div className={styles.qrCode}>{selected.course_code.replace(" ", "")}</div>
                       <div className={styles.qrLabel}>Students scan this with their phone camera</div>
-                      <div className={styles.qrTimer}>⏱ Expires {new Date(qrData.expiry).toLocaleTimeString()}</div>
+                      <div className={styles.qrTimer} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <Clock size={12} />Expires {new Date(qrData.expiry).toLocaleTimeString()}
+                      </div>
                       <div style={{ display: "flex", gap: 10 }}>
                         <button className={styles.btnSecondary} onClick={() => setQrData(null)}>Hide QR</button>
                         <button className={styles.btnSecondary} onClick={handleEndSession}>End Session</button>
@@ -413,7 +422,7 @@ function SessionsPage() {
                     </>
                   ) : (
                     <>
-                      <div className={styles.scannerIcon}>📲</div>
+                      <div className={styles.scannerIcon}><QrCode size={48} /></div>
                       <div className={styles.scannerText}>Generate a QR code for students to scan and mark attendance</div>
                       <button className={styles.btnPrimary} onClick={handleGenerateQR}>Generate QR Code</button>
                       <button className={styles.btnSecondary} onClick={handleEndSession}>End Session</button>
@@ -422,7 +431,7 @@ function SessionsPage() {
                 </div>
               ) : (
                 <div className={styles.qrWrapper}>
-                  <div className={styles.scannerIcon}>🔒</div>
+                  <div className={styles.scannerIcon}><Lock size={48} /></div>
                   <div className={styles.scannerText}>Session ended. QR codes can only be generated for active sessions.</div>
                 </div>
               )}
@@ -435,9 +444,9 @@ function SessionsPage() {
       {selected && (
         <div className={styles.card} style={{ marginTop: 20 }}>
           <div className={styles.cardHeader}>
-            <div className={styles.cardTitle}>👥 Student Attendance — {selected.course_name}</div>
+            <div className={styles.cardTitle}><Users size={16} />Student Attendance — {selected.course_name}</div>
             <button className={styles.btnPrimary} style={{ fontSize: 12, padding: "7px 14px" }}
-              onClick={handleExport} disabled={students.length === 0}>⬇ Export</button>
+              onClick={handleExport} disabled={students.length === 0}><Download size={13} />Export</button>
           </div>
           {students.length === 0 ? (
             <div className={styles.emptyState}>No attendance records yet for this session.</div>
@@ -501,7 +510,7 @@ function RecordsPage() {
     <div className={styles.content}>
       <div className={styles.card}>
         <div className={styles.cardHeader}>
-          <div className={styles.cardTitle}>📋 Attendance Records</div>
+          <div className={styles.cardTitle}><ClipboardList size={16} />Attendance Records</div>
           {courses.length > 0 && (
             <select value={selectedCourseId} onChange={e => setSelectedCourseId(e.target.value)}
               style={{ padding: "8px 12px", border: "1px solid #e0e4ea", borderRadius: 8, fontSize: 13 }}>
@@ -623,7 +632,7 @@ export default function LecturerDashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const titles = {
-    Dashboard: `Good morning, ${user.name.split(" ")[0]} 👋`,
+    Dashboard: `Good morning, ${user.name.split(" ")[0]}`,
     Sessions:  "Sessions & QR Code",
     Records:   "Attendance Records",
     Reports:   "Reports & Analytics",

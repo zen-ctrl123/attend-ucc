@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { register } from "../api";
+import { GraduationCap, Briefcase, Eye, EyeOff, X, ArrowLeft } from "lucide-react";
 import styles from "./LoginPage.module.css";
 
 export default function LoginPage() {
@@ -109,7 +110,9 @@ export default function LoginPage() {
               <button key={r} onClick={() => { setRole(r); setError(""); }}
                 className={styles.toggleBtn}
                 style={{ background: role === r ? "#003366" : "transparent", color: role === r ? "#fff" : "#003366" }}>
-                {r === "student" ? "🎓 Student" : "👨‍🏫 Lecturer"}
+                {r === "student"
+                  ? <><GraduationCap size={15} style={{ marginRight: 6, verticalAlign: -3 }} />Student</>
+                  : <><Briefcase size={15} style={{ marginRight: 6, verticalAlign: -3 }} />Lecturer</>}
               </button>
             ))}
           </div>
@@ -131,7 +134,7 @@ export default function LoginPage() {
                 onChange={e => setPassword(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && handleLogin()} />
               <button type="button" className={styles.eyeBtn} onClick={() => setShowPw(!showPw)}>
-                {showPw ? "🙈" : "👁️"}
+                {showPw ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
           </div>
@@ -171,7 +174,9 @@ export default function LoginPage() {
                 <button key={r} onClick={() => setSignupRole(r)}
                   className={styles.toggleBtn}
                   style={{ background: signupRole === r ? "#003366" : "transparent", color: signupRole === r ? "#fff" : "#003366" }}>
-                  {r === "student" ? "🎓 Student" : "👨‍🏫 Lecturer"}
+                  {r === "student"
+                  ? <><GraduationCap size={15} style={{ marginRight: 6, verticalAlign: -3 }} />Student</>
+                  : <><Briefcase size={15} style={{ marginRight: 6, verticalAlign: -3 }} />Lecturer</>}
                 </button>
               ))}
             </div>
@@ -223,7 +228,7 @@ export default function LoginPage() {
                   placeholder="Min. 6 characters" value={signupPw}
                   onChange={e => setSignupPw(e.target.value)} />
                 <button type="button" className={styles.eyeBtn} onClick={() => setShowSignupPw(!showSignupPw)}>
-                  {showSignupPw ? "🙈" : "👁️"}
+                  {showSignupPw ? <EyeOff size={17} /> : <Eye size={17} />}
                 </button>
               </div>
             </div>
@@ -249,8 +254,8 @@ export default function LoginPage() {
                       style={{ flex: 1 }} value={c.code} onChange={e => updateCourse(i, "code", e.target.value)} />
                     {courses.length > 1 && (
                       <button onClick={() => removeCourseRow(i)}
-                        style={{ background: "#fdecea", border: "none", borderRadius: 6, padding: "8px 10px", cursor: "pointer", color: "#8B0000", fontWeight: 700 }}>
-                        ✕
+                        style={{ background: "#fdecea", border: "none", borderRadius: 6, padding: "8px 10px", cursor: "pointer", color: "#8B0000", display: "flex", alignItems: "center" }}>
+                        <X size={14} />
                       </button>
                     )}
                   </div>
@@ -267,7 +272,10 @@ export default function LoginPage() {
             <button className={styles.submitBtn} disabled={signupLoading} onClick={handleRegister}>
               {signupLoading ? "Creating Account…" : "Create Account"}
             </button>
-            <button className={styles.cancelBtn} onClick={() => setShowSignup(false)}>← Back to Login</button>
+            <button className={styles.cancelBtn} onClick={() => setShowSignup(false)}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+              <ArrowLeft size={14} />Back to Login
+            </button>
           </div>
         </div>
       )}

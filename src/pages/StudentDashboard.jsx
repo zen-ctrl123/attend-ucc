@@ -4,6 +4,10 @@ import { Html5Qrcode } from "html5-qrcode";
 import { getCurrentPosition, getPublicIP } from "../utils/locationValidator";
 import { scanAttendance, getCourses, getStudentAttendance } from "../api";
 import NotificationBell from "../components/NotificationBell";
+import {
+  Menu, Calendar, Home, Camera, BarChart3, ClipboardList, User, LogOut,
+  AlertTriangle, BookOpen, Satellite, CheckCircle2, MapPin, QrCode, Info, Download,
+} from "lucide-react";
 import styles from "./Dashboard.module.css";
 
 function initials(name) {
@@ -16,7 +20,7 @@ function GlobalTopBar({ title, onMenuClick }) {
   return (
     <div className={styles.topBar}>
       <div className={styles.topBarBrand}>
-        <button className={styles.menuBtn} onClick={onMenuClick} aria-label="Open menu">☰</button>
+        <button className={styles.menuBtn} onClick={onMenuClick} aria-label="Open menu"><Menu size={22} /></button>
         <img src="/ucc-logo.png" alt="UCC" className={styles.topBarLogo}
           onError={e => e.target.style.display = "none"} />
         <div>
@@ -26,7 +30,9 @@ function GlobalTopBar({ title, onMenuClick }) {
       </div>
       <div className={styles.topBarTitle}>{title}</div>
       <div className={styles.topBarRight}>
-        <span className={styles.topBarDate}>📅 {today}</span>
+        <span className={styles.topBarDate} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Calendar size={14} />{today}
+        </span>
         <NotificationBell />
       </div>
     </div>
@@ -36,11 +42,11 @@ function GlobalTopBar({ title, onMenuClick }) {
 /* ── SIDEBAR ── */
 function Sidebar({ active, setActive, user, logout, drawerOpen, closeDrawer }) {
   const navItems = [
-    { key: "Dashboard",  icon: "🏠", label: "Dashboard"         },
-    { key: "Scan",       icon: "📸", label: "Scan QR Code"      },
-    { key: "Attendance", icon: "📊", label: "My Attendance"     },
-    { key: "Records",    icon: "📋", label: "My Records"        },
-    { key: "Profile",    icon: "👤", label: "Profile"           },
+    { key: "Dashboard",  icon: Home,          label: "Dashboard"         },
+    { key: "Scan",       icon: Camera,        label: "Scan QR Code"      },
+    { key: "Attendance", icon: BarChart3,     label: "My Attendance"     },
+    { key: "Records",    icon: ClipboardList, label: "My Records"        },
+    { key: "Profile",    icon: User,          label: "Profile"           },
   ];
 
   const handleNavClick = (key) => {
@@ -65,7 +71,7 @@ function Sidebar({ active, setActive, user, logout, drawerOpen, closeDrawer }) {
             <button key={item.key}
               className={`${styles.navItem} ${active === item.key ? styles.navItemActive : ""}`}
               onClick={() => handleNavClick(item.key)}>
-              <span className={styles.navIcon}>{item.icon}</span>
+              <span className={styles.navIcon}><item.icon size={18} /></span>
               {item.label}
             </button>
           ))}
@@ -73,7 +79,7 @@ function Sidebar({ active, setActive, user, logout, drawerOpen, closeDrawer }) {
 
         <div className={styles.sidebarBottom}>
           <button className={styles.logoutBtn} onClick={logout}>
-            <span className={styles.navIcon}>🚪</span>
+            <span className={styles.navIcon}><LogOut size={18} /></span>
             Logout
           </button>
         </div>
@@ -98,7 +104,7 @@ function DashboardPage({ user }) {
   }, []);
 
   if (loading) return <div className={styles.content}><div className={styles.emptyState}>Loading your courses…</div></div>;
-  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}>⚠️ {error}</div></div>;
+  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}><AlertTriangle size={18} />{error}</div></div>;
 
   const withPct = courses.map(c => {
     const pct  = c.total_sessions > 0 ? Math.round((c.attended / c.total_sessions) * 100) : 100;
@@ -120,7 +126,8 @@ function DashboardPage({ user }) {
 
       {atRisk > 0 && (
         <div className={`${styles.alertBanner} ${styles.danger}`} style={{ marginTop: 16 }}>
-          ⚠️ <strong>{atRisk} course{atRisk > 1 ? "s" : ""} at risk</strong> — attendance below the 75% threshold
+          <AlertTriangle size={18} />
+          <span><strong>{atRisk} course{atRisk > 1 ? "s" : ""} at risk</strong> — attendance below the 75% threshold</span>
         </div>
       )}
 
@@ -146,7 +153,7 @@ function DashboardPage({ user }) {
 
       <div className={styles.card}>
         <div className={styles.cardHeader}>
-          <div className={styles.cardTitle}>📚 Course Breakdown</div>
+          <div className={styles.cardTitle}><BookOpen size={16} />Course Breakdown</div>
         </div>
         {withPct.length === 0 ? (
           <div className={styles.emptyState}>You're not enrolled in any courses yet.</div>
@@ -280,11 +287,12 @@ function ScanPage({ setPage }) {
   return (
     <div className={styles.content}>
       <div className={styles.alertBanner} style={{ marginBottom: 20 }}>
-        📚 Scan the QR code your lecturer displays in class to mark your attendance
+        <BookOpen size={18} />
+        <span>Scan the QR code your lecturer displays in class to mark your attendance</span>
       </div>
 
       <div className={styles.card} style={{ maxWidth: 520, margin: "0 auto" }}>
-        <div className={styles.cardTitle} style={{ marginBottom: 20 }}>📸 Attendance Scanner</div>
+        <div className={styles.cardTitle} style={{ marginBottom: 20 }}><Camera size={16} />Attendance Scanner</div>
 
         {state === "scanning" && (
           <div>
@@ -294,7 +302,7 @@ function ScanPage({ setPage }) {
 
         {state === "verifying" && (
           <div className={styles.scannerBox}>
-            <div className={styles.scannerIcon}>📡</div>
+            <div className={styles.scannerIcon}><Satellite size={48} /></div>
             <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 700, fontSize: 15, color: "#003366" }}>
               Verifying your location…
             </div>
@@ -304,7 +312,7 @@ function ScanPage({ setPage }) {
 
         {state === "scan_failed" && (
           <div className={`${styles.scannerBox} ${styles.scannerError}`}>
-            <div className={styles.scannerIcon}>⚠️</div>
+            <div className={styles.scannerIcon}><AlertTriangle size={48} /></div>
             <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 16, color: "#8B0000" }}>Couldn't Mark Attendance</div>
             <div className={styles.scannerText} style={{ color: "#8B0000" }}>{scanError}</div>
             <button className={styles.btnPrimary} style={{ background: "#8B0000" }} onClick={retry}>Try Again</button>
@@ -313,7 +321,7 @@ function ScanPage({ setPage }) {
 
         {state === "success" && (
           <div className={`${styles.scannerBox} ${styles.scannerSuccess}`}>
-            <div className={styles.scannerIcon}>🎉</div>
+            <div className={styles.scannerIcon}><CheckCircle2 size={48} color="#1a7a4a" /></div>
             <div style={{ fontFamily: "'Syne', sans-serif", fontWeight: 800, fontSize: 18, color: "#1a7a4a" }}>Attendance Marked!</div>
             <div className={styles.scannerText} style={{ color: "#1a7a4a" }}>
              You've been recorded as {resultStatus === "late" ? "late" : "present"} for this session.
@@ -328,16 +336,16 @@ function ScanPage({ setPage }) {
       </div>
 
       <div className={styles.card} style={{ maxWidth: 520, margin: "20px auto 0" }}>
-        <div className={styles.cardTitle} style={{ marginBottom: 16 }}>ℹ️ How Verification Works</div>
+        <div className={styles.cardTitle} style={{ marginBottom: 16 }}><Info size={16} />How Verification Works</div>
         {[
-          ["📍", "GPS check", "Automatically confirms you're within metres of the lecture room"],
-          ["📱", "QR scan",   "Scans the unique code your lecturer displays"],
-        ].map(([icon, title, desc]) => (
-          <div key={title} style={{ display: "flex", gap: 14, padding: "10px 0", borderBottom: "1px solid #f0f2f5" }}>
-            <span style={{ fontSize: 20 }}>{icon}</span>
+          { icon: MapPin, title: "GPS check", desc: "Automatically confirms you're within metres of the lecture room" },
+          { icon: QrCode, title: "QR scan",   desc: "Scans the unique code your lecturer displays" },
+        ].map((item) => (
+          <div key={item.title} style={{ display: "flex", gap: 14, padding: "10px 0", borderBottom: "1px solid #f0f2f5" }}>
+            <span style={{ color: "#003366", flexShrink: 0 }}><item.icon size={20} /></span>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 13, color: "#003366" }}>{title}</div>
-              <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{desc}</div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: "#003366" }}>{item.title}</div>
+              <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{item.desc}</div>
             </div>
           </div>
         ))}
@@ -362,13 +370,13 @@ function AttendancePage() {
   }, []);
 
   if (loading) return <div className={styles.content}><div className={styles.emptyState}>Loading…</div></div>;
-  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}>⚠️ {error}</div></div>;
+  if (error)   return <div className={styles.content}><div className={`${styles.alertBanner} ${styles.danger}`}><AlertTriangle size={18} />{error}</div></div>;
 
   return (
     <div className={styles.content}>
       <div className={styles.card}>
         <div className={styles.cardHeader}>
-          <div className={styles.cardTitle}>📊 Attendance by Course</div>
+          <div className={styles.cardTitle}><BarChart3 size={16} />Attendance by Course</div>
         </div>
         {courses.length === 0 ? (
           <div className={styles.emptyState}>You're not enrolled in any courses yet.</div>
@@ -422,8 +430,8 @@ function RecordsPage() {
     <div className={styles.content}>
       <div className={styles.card}>
         <div className={styles.cardHeader}>
-          <div className={styles.cardTitle}>📋 Attendance History</div>
-          <button className={styles.btnPrimary}>⬇ Export</button>
+          <div className={styles.cardTitle}><ClipboardList size={16} />Attendance History</div>
+          <button className={styles.btnPrimary}><Download size={13} />Export</button>
         </div>
         {loading ? (
           <div className={styles.emptyState}>Loading…</div>
@@ -505,7 +513,7 @@ export default function StudentDashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const titles = {
-    Dashboard:  `Welcome, ${user.name.split(" ")[0]} 🎓`,
+    Dashboard:  `Welcome, ${user.name.split(" ")[0]}`,
     Scan:       "Scan QR Code",
     Attendance: "My Attendance",
     Records:    "My Records",

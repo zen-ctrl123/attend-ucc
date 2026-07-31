@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Download, BarChart3, ArrowLeft, TrendingUp, ClipboardList, Users, AlertTriangle } from "lucide-react";
 import styles from "./Dashboard.module.css";
 const COURSES = [
   { id: 1, code: "ITC 101", name: "Introduction to Programming",   enrolled: 42, sessions: 12 },
@@ -197,7 +198,7 @@ export default function ReportsTab() {
             <div className={styles.sectionSub}>Semester overview — all courses</div>
           </div>
           <button className={styles.btnPrimary} onClick={() => exportFullReportCSV(COURSES)}>
-            ⬇ Export Full Report
+            <Download size={14} />Export Full Report
           </button>
         </div>
 
@@ -219,7 +220,7 @@ export default function ReportsTab() {
 
         {/* Per-course summary table */}
         <div className={styles.card}>
-          <div className={styles.cardTitle}>📊 Course Summary</div>
+          <div className={styles.cardTitle}><BarChart3 size={16} />Course Summary</div>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -281,7 +282,7 @@ export default function ReportsTab() {
           <button className={styles.btnSecondary}
             style={{ padding: "7px 14px", fontSize: 12 }}
             onClick={() => setView("overview")}>
-            ← Back
+            <ArrowLeft size={13} />Back
           </button>
           <div>
             <div className={styles.sectionTitle}>{selectedCourse.name}</div>
@@ -291,11 +292,11 @@ export default function ReportsTab() {
         <div style={{ display: "flex", gap: 10 }}>
           <button className={styles.btnSecondary}
             onClick={() => exportSessionCSV(selectedCourse, records)}>
-            ⬇ Sessions CSV
+            <Download size={13} />Sessions CSV
           </button>
           <button className={styles.btnPrimary}
             onClick={() => exportStudentCSV(selectedCourse, STUDENT_RECORDS)}>
-            ⬇ Students CSV
+            <Download size={13} />Students CSV
           </button>
         </div>
       </div>
@@ -317,21 +318,21 @@ export default function ReportsTab() {
 
       {/* Attendance chart */}
       <div className={styles.card}>
-        <div className={styles.cardTitle}>📈 Attendance Over Time</div>
+        <div className={styles.cardTitle}><TrendingUp size={16} />Attendance Over Time</div>
         <div style={{ marginBottom: 8 }}>
           <AttendanceChart records={records} enrolled={selectedCourse.enrolled} />
         </div>
-        <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#888", marginTop: 8 }}>
-          <span>🟩 ≥ 85%</span>
-          <span>🟨 75–84%</span>
-          <span>🟥 &lt; 75%</span>
+        <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#888", marginTop: 8, alignItems: "center" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "#1a7a4a", display: "inline-block" }} />≥ 85%</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "#C9A84C", display: "inline-block" }} />75–84%</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: "#8B0000", display: "inline-block" }} />&lt; 75%</span>
           <span style={{ color: "#C9A84C" }}>— — 75% threshold</span>
         </div>
       </div>
 
       {/* Per-session table */}
       <div className={styles.card}>
-        <div className={styles.cardTitle}>📋 Session-by-Session Records</div>
+        <div className={styles.cardTitle}><ClipboardList size={16} />Session-by-Session Records</div>
         <table className={styles.table}>
           <thead>
             <tr><th>Date</th><th>Present</th><th>Absent</th><th>Rate</th></tr>
@@ -359,7 +360,7 @@ export default function ReportsTab() {
       {/* Per-student table */}
       <div className={styles.card}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div className={styles.cardTitle} style={{ margin: 0 }}>👥 Student Breakdown</div>
+          <div className={styles.cardTitle} style={{ margin: 0 }}><Users size={16} />Student Breakdown</div>
           <div style={{ display: "flex", gap: 8 }}>
             {["all", "risk"].map(f => (
               <button key={f}
@@ -370,8 +371,9 @@ export default function ReportsTab() {
                   color:      studentFilter === f ? "#fff"    : "#003366",
                   border:     "1.5px solid #003366",
                   transition: "all 0.2s",
+                  display: "inline-flex", alignItems: "center", gap: 5,
                 }}>
-                {f === "all" ? "All Students" : "⚠ At Risk Only"}
+                {f === "all" ? "All Students" : <><AlertTriangle size={12} />At Risk Only</>}
               </button>
             ))}
           </div>
