@@ -11,6 +11,19 @@ function getToken() {
   return localStorage.getItem("attenducc_token");
 }
 
+// A random ID persisted per browser/device (survives login/logout, unlike
+// the auth token) — lets the backend tell "one phone scanning for several
+// accounts" apart from "several phones on the same WiFi", which a shared
+// public IP can't distinguish.
+function getDeviceId() {
+  let id = localStorage.getItem("attenducc_device_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("attenducc_device_id", id);
+  }
+  return id;
+}
+
 function authHeaders() {
   return {
     "Content-Type": "application/json",
@@ -154,7 +167,7 @@ export async function scanAttendance(qr_token, gps_lat, gps_lng, ip_address) {
   const res = await fetch(`${BASE_URL}/attendance/scan`, {
     method:  "POST",
     headers: authHeaders(),
-    body:    JSON.stringify({ qr_token, gps_lat, gps_lng, ip_address }),
+    body:    JSON.stringify({ qr_token, gps_lat, gps_lng, ip_address, device_id: getDeviceId() }),
   });
   return handleResponse(res);
 }

@@ -22,6 +22,9 @@ async function migrate() {
     `ALTER TABLE sessions ADD COLUMN hall_lat      REAL`,
     `ALTER TABLE sessions ADD COLUMN hall_lng      REAL`,
     `ALTER TABLE sessions ADD COLUMN hall_radius   INTEGER DEFAULT 100`,
+    // Per-browser device ID — replaces the old IP-based anti-proxy check,
+    // which false-positived on any two students sharing WiFi/campus network.
+    `ALTER TABLE attendance_records ADD COLUMN device_id TEXT`,
   ];
 
   for (const sql of migrations) {

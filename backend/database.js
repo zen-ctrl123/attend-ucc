@@ -76,6 +76,7 @@ async function initSchema() {
       gps_lat     REAL,
       gps_lng     REAL,
       ip_address  TEXT,
+      device_id   TEXT,
       UNIQUE(session_id, student_id),
       FOREIGN KEY (session_id) REFERENCES sessions(id),
       FOREIGN KEY (student_id) REFERENCES students(id)

@@ -388,15 +388,16 @@ app.post("/api/sessions/:id/qr", authenticate, async (req, res) => {
     const session = sessionRes.rows[0];
     if (!session) return res.status(404).json({ error: "Session not found." });
 
-    const lat    = lecturer_lat || session.hall_lat  || null;
-    const lng    = lecturer_lng || session.hall_lng  || null;
-    const radius = session.hall_radius || 80;
     const expiry = new Date(Date.now() + QR_EXPIRY_MINUTES * 60 * 1000).toISOString();
 
-    // The QR code IS this signed token — no server lookup needed to know what
-    // it means, only to verify it hasn't been forged, expired, or revoked.
+    // Keep this payload as small as possible — every extra field makes the
+    // printed/displayed QR denser and harder for a real phone camera to
+    // resolve. Session/location/course data all get looked up server-side
+    // from sessionId at scan time anyway (needed regardless, to check the
+    // token hasn't been revoked by a regenerate), so nothing else needs to
+    // ride along in the signed token itself.
     const qrJWT = jwt.sign(
-      { sessionId: Number(sessionId), courseId: session.course_id, lecturerId: session.lecturer_id, lat, lng, radius },
+      { sessionId: Number(sessionId) },
       QR_SECRET,
       { expiresIn: `${QR_EXPIRY_MINUTES}m` }
     );
@@ -486,7 +487,7 @@ app.post("/api/sessions/:id/end", authenticate, async (req, res) => {
 app.post("/api/attendance/scan", authenticate, async (req, res) => {
   if (req.user.role !== "student") return res.status(403).json({ error: "Only students can scan QR codes." });
   try {
-    const { qr_token, gps_lat, gps_lng, ip_address } = req.body;
+    const { qr_token, gps_lat, gps_lng, ip_address, device_id } = req.body;
     if (!qr_token) return res.status(400).json({ error: "Invalid QR code. Please scan the correct code." });
 
     let payload;
@@ -514,21 +515,27 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
     const existingRes = await db.execute({ sql: "SELECT * FROM attendance_records WHERE session_id = ? AND student_id = ?", args: [session.id, req.user.studentId] });
     if (["present", "late"].includes(existingRes.rows[0]?.status)) return res.status(400).json({ error: "You have already marked attendance for this session." });
 
-    if (ip_address) {
-      const ipUsedRes = await db.execute({
-        sql: "SELECT * FROM attendance_records WHERE session_id = ? AND ip_address = ? AND status IN ('present','late') AND student_id != ?",
-        args: [session.id, ip_address, req.user.studentId],
+    // Per-device check, not per-IP: a public IP is shared by everyone on the
+    // same WiFi (the normal case in a classroom), so it can't tell "one
+    // phone, several accounts" apart from "several phones, one network".
+    // A per-browser device ID can.
+    if (device_id) {
+      const deviceUsedRes = await db.execute({
+        sql: "SELECT * FROM attendance_records WHERE session_id = ? AND device_id = ? AND status IN ('present','late') AND student_id != ?",
+        args: [session.id, device_id, req.user.studentId],
       });
-      if (ipUsedRes.rows.length > 0) return res.status(400).json({ error: "This device has already been used to mark attendance for another student. Proxy attendance is not allowed." });
+      if (deviceUsedRes.rows.length > 0) return res.status(400).json({ error: "This device has already been used to mark attendance for another student. Proxy attendance is not allowed." });
     }
 
     if (!gps_lat || !gps_lng) return res.status(400).json({ error: "Location is required to mark attendance. Please enable location access and try again." });
 
-    // Compare against the location embedded in the QR at generation time,
-    // not a fresh DB read — that's what "verified against the QR" means.
-    if (payload.lat && payload.lng) {
-      const distance = getDistanceMetres(parseFloat(gps_lat), parseFloat(gps_lng), parseFloat(payload.lat), parseFloat(payload.lng));
-      const radius   = payload.radius || 80;
+    // Location the QR was generated with — pulled from the session row
+    // (recorded when this QR was issued), not re-derived at scan time.
+    const refLat = session.lecturer_lat || session.hall_lat;
+    const refLng = session.lecturer_lng || session.hall_lng;
+    const radius = session.hall_radius || 80;
+    if (refLat && refLng) {
+      const distance = getDistanceMetres(parseFloat(gps_lat), parseFloat(gps_lng), parseFloat(refLat), parseFloat(refLng));
       if (distance > radius) return res.status(400).json({ error: `You are ${Math.round(distance)}m away from the classroom. Must be within ${radius}m.` });
     }
 
@@ -540,15 +547,15 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
     if (existingRes.rows.length === 0) {
       // Student enrolled after the session was created, so no seeded row exists yet.
       await db.execute({
-        sql: `INSERT INTO attendance_records (session_id, student_id, status, scanned_at, gps_lat, gps_lng, ip_address)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        args: [session.id, req.user.studentId, status, now.toISOString(), gps_lat ?? null, gps_lng ?? null, ip_address ?? null],
+        sql: `INSERT INTO attendance_records (session_id, student_id, status, scanned_at, gps_lat, gps_lng, ip_address, device_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [session.id, req.user.studentId, status, now.toISOString(), gps_lat ?? null, gps_lng ?? null, ip_address ?? null, device_id ?? null],
       });
     } else {
       await db.execute({
-        sql: `UPDATE attendance_records SET status = ?, scanned_at = ?, gps_lat = ?, gps_lng = ?, ip_address = ?
+        sql: `UPDATE attendance_records SET status = ?, scanned_at = ?, gps_lat = ?, gps_lng = ?, ip_address = ?, device_id = ?
               WHERE session_id = ? AND student_id = ?`,
-        args: [status, now.toISOString(), gps_lat ?? null, gps_lng ?? null, ip_address ?? null, session.id, req.user.studentId],
+        args: [status, now.toISOString(), gps_lat ?? null, gps_lng ?? null, ip_address ?? null, device_id ?? null, session.id, req.user.studentId],
       });
     }
 

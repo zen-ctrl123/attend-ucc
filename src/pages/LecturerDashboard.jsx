@@ -22,6 +22,13 @@ function initials(name) {
   return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
+function formatCountdown(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 /* ── GLOBAL TOP BAR (logo + brand + page title + date/notif) ── */
 function GlobalTopBar({ title, onMenuClick }) {
   const todayFull  = new Date().toLocaleDateString("en-GH", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -241,6 +248,23 @@ function SessionsPage() {
     return () => clearInterval(interval);
   }, [selected?.id, selected?.status]);
 
+  // Live countdown on the displayed QR — the backend already rejects an
+  // expired token, but the UI otherwise leaves a dead QR sitting on screen
+  // with no indication it stopped working. Once the clock runs out, drop
+  // qrData so it falls back to the "Generate QR Code" screen automatically.
+  const [msLeft, setMsLeft] = useState(null);
+  useEffect(() => {
+    if (!qrData) { setMsLeft(null); return; }
+    const tick = () => {
+      const remaining = new Date(qrData.expiry).getTime() - Date.now();
+      if (remaining <= 0) { setQrData(null); setMsLeft(null); }
+      else setMsLeft(remaining);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [qrData]);
+
   const handleCreateSession = async (e) => {
     e.preventDefault();
     if (!newCourseId || !newRoom.trim()) return;
@@ -367,6 +391,9 @@ function SessionsPage() {
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14, color: "#1a1a2e" }}>{s.course_name}</div>
                     <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{s.course_code} · {s.room}</div>
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                      {s.start_time}{s.end_time ? ` – ${s.end_time}` : " – now"}
+                    </div>
                   </div>
                   <span className={`${styles.badge} ${s.status === "active" ? styles.badgeActive : styles.badgeEnded}`}>
                     {s.status === "active" ? "Active" : "Ended"}
@@ -390,7 +417,10 @@ function SessionsPage() {
               </div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#003366" }}>{selected.course_name}</div>
-                <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>{selected.room}</div>
+                <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>
+                  {selected.room} · Started {selected.start_time}
+                  {selected.end_time ? ` · Ended ${selected.end_time}` : ""}
+                </div>
               </div>
 
               <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
@@ -411,12 +441,13 @@ function SessionsPage() {
                   {qrData ? (
                     <>
                       <div className={styles.qrBox}>
-                        <QRCodeSVG value={qrData.qrValue} size={200} bgColor="#ffffff" fgColor="#003366" level="H" />
+                        <QRCodeSVG value={qrData.qrValue} size={240} bgColor="#ffffff" fgColor="#003366" level="M" />
                       </div>
                       <div className={styles.qrCode}>{selected.course_code.replace(" ", "")}</div>
                       <div className={styles.qrLabel}>Students scan this with their phone camera</div>
                       <div className={styles.qrTimer} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <Clock size={12} />Expires {new Date(qrData.expiry).toLocaleTimeString()}
+                        <Clock size={12} />
+                        {msLeft != null ? `Expires in ${formatCountdown(msLeft)}` : `Expires ${new Date(qrData.expiry).toLocaleTimeString()}`}
                       </div>
                       <div style={{ display: "flex", gap: 10 }}>
                         <button className={styles.btnSecondary} onClick={() => setQrData(null)}>Hide QR</button>
