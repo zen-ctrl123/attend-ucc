@@ -55,16 +55,16 @@ async function handleResponse(res) {
 //  AUTH
 // ══════════════════════════════════════════════════════
 
+// A correct password no longer issues a token directly — it triggers an
+// emailed one-time code, and { requiresOtp: true, email } tells the caller
+// to move to the OTP step. Actually becoming logged in happens in verifyOtp.
 export async function login(identifier, password, role) {
   const res = await fetch(`${BASE_URL}/auth/login`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ identifier, password, role }),
   });
-  const data = await handleResponse(res);
-  localStorage.setItem("attenducc_token", data.token);
-  localStorage.setItem("attenducc_user",  JSON.stringify(data.user));
-  return data.user;
+  return handleResponse(res);
 }
 
 export async function register(formData) {
@@ -72,6 +72,29 @@ export async function register(formData) {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify(formData),
+  });
+  return handleResponse(res);
+}
+
+// The only place a token is actually issued — after registration and after
+// every login, this is what "being logged in" waits on.
+export async function verifyOtp(email, otp) {
+  const res = await fetch(`${BASE_URL}/auth/verify-otp`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ email, otp }),
+  });
+  const data = await handleResponse(res);
+  localStorage.setItem("attenducc_token", data.token);
+  localStorage.setItem("attenducc_user",  JSON.stringify(data.user));
+  return data.user;
+}
+
+export async function resendOtp(email) {
+  const res = await fetch(`${BASE_URL}/auth/resend-otp`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ email }),
   });
   return handleResponse(res);
 }

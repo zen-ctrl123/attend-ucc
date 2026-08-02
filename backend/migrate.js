@@ -25,6 +25,9 @@ async function migrate() {
     // Per-browser device ID — replaces the old IP-based anti-proxy check,
     // which false-positived on any two students sharing WiFi/campus network.
     `ALTER TABLE attendance_records ADD COLUMN device_id TEXT`,
+    // Two-factor auth — OTP required on registration and every login.
+    `ALTER TABLE users ADD COLUMN otp_code   TEXT`,
+    `ALTER TABLE users ADD COLUMN otp_expiry TEXT`,
   ];
 
   for (const sql of migrations) {

@@ -1,17 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { register } from "../api";
-import { GraduationCap, Briefcase, Eye, EyeOff, X, ArrowLeft } from "lucide-react";
+import { register, resendOtp } from "../api";
+import { GraduationCap, Briefcase, Eye, EyeOff, X, ArrowLeft, MailCheck } from "lucide-react";
 import styles from "./LoginPage.module.css";
 
 export default function LoginPage() {
-  const { login }  = useAuth();
+  const { login, completeLogin } = useAuth();
   const [role, setRole]         = useState("student");
   const [id, setId]             = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
+
+  // OTP step — shown after a correct password (login) or a successful
+  // signup, since both now stop short of a session until this is entered.
+  const [otpEmail, setOtpEmail]     = useState(null);
+  const [otpCode, setOtpCode]       = useState("");
+  const [otpError, setOtpError]     = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   // Signup state
   const [showSignup, setShowSignup]   = useState(false);
@@ -43,12 +57,42 @@ export default function LoginPage() {
     if (!id || !password) { setError("Please fill in all fields."); return; }
     setError(""); setLoading(true);
     try {
-      await login(id, password, role);
+      const result = await login(id, password, role);
+      if (result?.requiresOtp) { setOtpEmail(result.email); setResendCooldown(30); }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  };
+
+  // ── OTP (shared by login and signup) ──
+  const handleVerifyOtp = async () => {
+    if (otpCode.length !== 6) { setOtpError("Enter the 6-digit code."); return; }
+    setOtpError(""); setOtpLoading(true);
+    try {
+      await completeLogin(otpEmail, otpCode);
+      // success flips AuthContext's user state, which unmounts this page.
+    } catch (err) {
+      setOtpError(err.message);
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0) return;
+    setOtpError("");
+    try {
+      await resendOtp(otpEmail);
+      setResendCooldown(30);
+    } catch (err) {
+      setOtpError(err.message);
+    }
+  };
+
+  const cancelOtp = () => {
+    setOtpEmail(null); setOtpCode(""); setOtpError(""); setResendCooldown(0);
   };
 
   // ── Register ──
@@ -72,11 +116,11 @@ export default function LoginPage() {
           : { staff_id: signupId, dept: signupDept || "Computer Science & IT",
               courses: courses.filter(c => c.name && c.code) }),
       };
-      await register(payload);
+      const result = await register(payload);
       setShowSignup(false);
-      alert("Account created successfully! You can now log in.");
       setSignupName(""); setSignupId(""); setSignupEmail("");
       setSignupPw(""); setSignupConfirm(""); setCourses([{ name: "", code: "" }]);
+      if (result?.requiresOtp) { setOtpEmail(result.email); setResendCooldown(30); }
     } catch (err) {
       setSignupError(err.message);
     } finally {
@@ -275,6 +319,46 @@ export default function LoginPage() {
             <button className={styles.cancelBtn} onClick={() => setShowSignup(false)}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
               <ArrowLeft size={14} />Back to Login
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── OTP Modal — shared by login and signup, both end here ── */}
+      {otpEmail && (
+        <div className={styles.modal}>
+          <div className={styles.modalCard} style={{ maxWidth: 400, textAlign: "center" }}>
+            <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+              <MailCheck size={40} color="#003366" />
+            </div>
+            <h2 className={styles.modalTitle}>Enter Verification Code</h2>
+            <p className={styles.modalSub}>We sent a 6-digit code to <strong>{otpEmail}</strong></p>
+
+            <div className={styles.fieldGroup} style={{ textAlign: "left" }}>
+              <label className={styles.label}>Verification Code</label>
+              <input className={styles.input}
+                style={{ textAlign: "center", fontSize: 22, letterSpacing: "0.5em", fontWeight: 700 }}
+                inputMode="numeric" maxLength={6} placeholder="------"
+                value={otpCode}
+                onChange={e => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onKeyDown={e => e.key === "Enter" && handleVerifyOtp()}
+                autoFocus />
+            </div>
+
+            {otpError && <div className={styles.error}>{otpError}</div>}
+
+            <button className={styles.submitBtn} disabled={otpLoading} onClick={handleVerifyOtp}>
+              {otpLoading ? "Verifying…" : "Verify & Continue"}
+            </button>
+
+            <button className={styles.forgotBtn} style={{ display: "block", margin: "10px auto 0" }}
+              disabled={resendCooldown > 0} onClick={handleResendOtp}>
+              {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
+            </button>
+
+            <button className={styles.cancelBtn} onClick={cancelOtp}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+              <ArrowLeft size={14} />Cancel
             </button>
           </div>
         </div>

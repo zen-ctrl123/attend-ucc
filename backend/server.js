@@ -11,6 +11,7 @@ const {
   sendQRExpiryAlert,
   sendMissedSessionAlert,
   sendWelcomeEmail,
+  sendOtpEmail,
 } = require("./emailService");
 const {
   notifyMissedSession,
@@ -84,6 +85,36 @@ const findHall = (room) => LECTURE_HALLS_KEY[normalizeRoomKey(room)] || null;
 //  AUTH ROUTES
 // ══════════════════════════════════════════════════════
 
+// Two-factor auth: registration and every login stop short of issuing a
+// token and instead require this code, emailed to the account's address.
+const OTP_EXPIRY_MINUTES = 10;
+
+function generateOtp() {
+  return String(crypto.randomInt(100000, 1000000)); // always 6 digits
+}
+
+async function issueOtp(user) {
+  const otp    = generateOtp();
+  const expiry = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000).toISOString();
+  await db.execute({ sql: "UPDATE users SET otp_code = ?, otp_expiry = ? WHERE id = ?", args: [otp, expiry, user.id] });
+  sendOtpEmail(user.email, user.name, otp).catch(console.error);
+}
+
+async function buildProfile(user) {
+  let profile = { id: user.id, name: user.name, email: user.email, role: user.role };
+  if (user.role === "student") {
+    const sr = await db.execute({ sql: "SELECT * FROM students WHERE user_id = ?", args: [user.id] });
+    const s  = sr.rows[0];
+    profile  = { ...profile, studentId: s.id, indexNumber: s.index_number, level: s.level, programme: s.programme };
+  }
+  if (user.role === "lecturer") {
+    const lr = await db.execute({ sql: "SELECT * FROM lecturers WHERE user_id = ?", args: [user.id] });
+    const l  = lr.rows[0];
+    profile  = { ...profile, lecturerId: l.id, staffId: l.staff_id, dept: l.dept };
+  }
+  return profile;
+}
+
 app.post("/api/auth/register", async (req, res) => {
   const { name, password, role, index_number, staff_id, level, dept, programme, courses } = req.body;
   const email = normalizeEmail(req.body.email);
@@ -146,7 +177,8 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     sendWelcomeEmail(email, name, role, identifier).catch(console.error);
-    res.json({ message: "Account created successfully. You can now log in." });
+    await issueOtp({ id: userId, name, email });
+    res.json({ requiresOtp: true, email, message: "Account created. Enter the code sent to your email to finish signing in." });
 
   } catch (err) {
     console.error(err);
@@ -185,26 +217,69 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(403).json({ error: "This account has been deactivated due to one year of inactivity. Please contact your department administrator." });
     }
 
-    await db.execute({ sql: "UPDATE users SET last_active = ? WHERE id = ?", args: [new Date().toISOString(), user.id] });
-
-    let profile = { id: user.id, name: user.name, email: user.email, role: user.role };
-    if (role === "student") {
-      const sr = await db.execute({ sql: "SELECT * FROM students WHERE user_id = ?", args: [user.id] });
-      const s  = sr.rows[0];
-      profile  = { ...profile, studentId: s.id, indexNumber: s.index_number, level: s.level, programme: s.programme };
-    }
-    if (role === "lecturer") {
-      const lr = await db.execute({ sql: "SELECT * FROM lecturers WHERE user_id = ?", args: [user.id] });
-      const l  = lr.rows[0];
-      profile  = { ...profile, lecturerId: l.id, staffId: l.staff_id, dept: l.dept };
-    }
-
-    const token = jwt.sign(profile, SECRET, { expiresIn: "8h" });
-    res.json({ token, user: profile });
+    await issueOtp(user);
+    res.json({ requiresOtp: true, email: user.email, message: "A verification code has been sent to your email." });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Login failed. Please try again." });
+  }
+});
+
+app.post("/api/auth/verify-otp", async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const otp   = (req.body.otp || "").trim();
+  if (!email || !otp) return res.status(400).json({ error: "Email and code are required." });
+
+  try {
+    const userRes = await db.execute({ sql: "SELECT * FROM users WHERE email = ?", args: [email] });
+    const user    = userRes.rows[0];
+    if (!user || !user.otp_code) return res.status(400).json({ error: "Invalid or expired code. Request a new one." });
+    if (user.otp_code !== otp) return res.status(400).json({ error: "Incorrect code. Please try again." });
+    if (new Date() > new Date(user.otp_expiry)) return res.status(400).json({ error: "This code has expired. Request a new one." });
+
+    if (user.active === 0) {
+      return res.status(403).json({ error: "This account has been deactivated due to one year of inactivity. Please contact your department administrator." });
+    }
+
+    await db.execute({
+      sql: "UPDATE users SET otp_code = NULL, otp_expiry = NULL, last_active = ? WHERE id = ?",
+      args: [new Date().toISOString(), user.id],
+    });
+
+    const profile = await buildProfile(user);
+    const token   = jwt.sign(profile, SECRET, { expiresIn: "8h" });
+    res.json({ token, user: profile });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Verification failed. Please try again." });
+  }
+});
+
+app.post("/api/auth/resend-otp", async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  if (!email) return res.status(400).json({ error: "Email is required." });
+
+  try {
+    const userRes = await db.execute({ sql: "SELECT * FROM users WHERE email = ?", args: [email] });
+    const user    = userRes.rows[0];
+    if (!user) return res.status(400).json({ error: "Account not found." });
+
+    // A code is only ever issued with a fresh OTP_EXPIRY_MINUTES window, so
+    // working backward from otp_expiry tells us when it was sent without a
+    // separate "last sent" column.
+    if (user.otp_expiry) {
+      const issuedAt         = new Date(user.otp_expiry).getTime() - OTP_EXPIRY_MINUTES * 60 * 1000;
+      const secondsSinceSent = (Date.now() - issuedAt) / 1000;
+      if (secondsSinceSent < 30) return res.status(429).json({ error: "Please wait a moment before requesting another code." });
+    }
+
+    await issueOtp(user);
+    res.json({ message: "A new code has been sent to your email." });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to resend code." });
   }
 });
 

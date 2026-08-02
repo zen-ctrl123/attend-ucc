@@ -280,10 +280,36 @@ async function sendWelcomeEmail(to, name, role, identifier) {
   });
 }
 
+// 6. Two-factor login/registration — one-time verification code
+async function sendOtpEmail(to, name, otp) {
+  return sendEmail({
+    to,
+    subject: `${otp} is your AttendUCC verification code`,
+    html: template(
+      "Verify It's You",
+      `
+        <p style="color:#444;font-size:14px;line-height:1.7;">Hi <strong>${name}</strong>,</p>
+        <p style="color:#444;font-size:14px;line-height:1.7;">
+          Enter this code to continue. It expires in <strong>10 minutes</strong>.
+        </p>
+        <div style="text-align:center;margin:24px 0;">
+          <span style="display:inline-block;background:#f8f9fb;border:1px solid #e0e4ea;border-radius:10px;
+                       padding:16px 32px;font-family:'Courier New',monospace;font-size:32px;font-weight:800;
+                       letter-spacing:0.3em;color:#003366;">${otp}</span>
+        </div>
+        <p style="color:#888;font-size:13px;line-height:1.7;">
+          If you didn't request this code, you can safely ignore this email — no one can access your account without it.
+        </p>
+      `
+    ),
+  });
+}
+
 module.exports = {
   sendPasswordReset,
   sendClassReminder,
   sendQRExpiryAlert,
   sendMissedSessionAlert,
   sendWelcomeEmail,
+  sendOtpEmail,
 };

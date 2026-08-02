@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
-import { login as apiLogin, logout as apiLogout, getSavedUser } from "../api";
+import { login as apiLogin, verifyOtp, logout as apiLogout, getSavedUser } from "../api";
 
 const AuthContext = createContext(null);
 
@@ -41,8 +41,15 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, [resetTimer]);
 
-  const login = async (identifier, password, role) => {
-    const user = await apiLogin(identifier, password, role);
+  // A correct password now only earns an emailed OTP, not a session --
+  // this just proxies that request; the caller (LoginPage) is responsible
+  // for moving to the OTP step. Nothing about auth state changes here.
+  const login = (identifier, password, role) => apiLogin(identifier, password, role);
+
+  // The actual moment a session begins, for both registration and login --
+  // whichever one sent the OTP, entering it correctly ends here.
+  const completeLogin = async (email, otp) => {
+    const user = await verifyOtp(email, otp);
     setUser(user);
     resetTimer();
     return user;
@@ -57,7 +64,7 @@ export function AuthProvider({ children }) {
   if (loading) return null;
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, completeLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -16,6 +16,8 @@ async function initSchema() {
       email       TEXT UNIQUE NOT NULL,
       password    TEXT NOT NULL,
       role        TEXT NOT NULL CHECK(role IN ('lecturer', 'student')),
+      otp_code    TEXT,
+      otp_expiry  TEXT,
       created_at  TEXT DEFAULT (datetime('now'))
     );
 
