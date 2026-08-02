@@ -539,10 +539,16 @@ app.post("/api/attendance/scan", authenticate, async (req, res) => {
 
     if (!gps_lat || !gps_lng) return res.status(400).json({ error: "Location is required to mark attendance. Please enable location access and try again." });
 
-    // Location the QR was generated with — pulled from the session row
-    // (recorded when this QR was issued), not re-derived at scan time.
-    const refLat = session.lecturer_lat || session.hall_lat;
-    const refLng = session.lecturer_lng || session.hall_lng;
+    // The lecturer's own live location, captured when this QR was issued —
+    // not a re-derived reading, and NOT the static hall coordinates. Those
+    // are never precisely surveyed and have been wrong by kilometres in
+    // practice, which is worse than skipping the check: a bad fixed point
+    // silently rejects every real student, whereas no reference point just
+    // means this particular session isn't geofenced. hall_radius is still
+    // used as the tolerance once there IS a real reference point — the
+    // *size* of a guessed default is harmless, only its *position* isn't.
+    const refLat = session.lecturer_lat;
+    const refLng = session.lecturer_lng;
     const radius = session.hall_radius || 80;
     if (refLat && refLng) {
       const distance = getDistanceMetres(parseFloat(gps_lat), parseFloat(gps_lng), parseFloat(refLat), parseFloat(refLng));
