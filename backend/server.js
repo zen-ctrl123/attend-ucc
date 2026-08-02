@@ -70,6 +70,16 @@ app.get("/api/halls", (req, res) => {
   res.json(Object.entries(LECTURE_HALLS).map(([name, data]) => ({ name, ...data })));
 });
 
+// Lecturers type the room name free-form ("LT4", "lt 4", "LT 4" should all
+// match) — an exact-match lookup silently drops the hall's fixed
+// coordinates (and the geofence radius that goes with them) over a detail
+// as small as a missing space.
+const normalizeRoomKey  = (room) => (room || "").toLowerCase().replace(/\s+/g, "");
+const LECTURE_HALLS_KEY = Object.fromEntries(
+  Object.entries(LECTURE_HALLS).map(([name, data]) => [normalizeRoomKey(name), data])
+);
+const findHall = (room) => LECTURE_HALLS_KEY[normalizeRoomKey(room)] || null;
+
 // ══════════════════════════════════════════════════════
 //  AUTH ROUTES
 // ══════════════════════════════════════════════════════
@@ -355,7 +365,7 @@ app.post("/api/sessions", authenticate, async (req, res) => {
   try {
     const { course_id, room } = req.body;
     const today    = new Date().toISOString().split("T")[0];
-    const hallData = LECTURE_HALLS[room] || {};
+    const hallData = findHall(room) || {};
     const result   = await db.execute({
       sql: "INSERT INTO sessions (course_id, room, date, start_time, status, hall_lat, hall_lng, hall_radius) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)",
       args: [course_id, room, today, new Date().toTimeString().slice(0, 5), hallData.lat || null, hallData.lng || null, hallData.radius || 100],

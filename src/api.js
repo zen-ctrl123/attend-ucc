@@ -131,14 +131,23 @@ export async function createSession(course_id, room) {
   return handleResponse(res);
 }
 
+// A location reading isn't useful for a ~60-120m geofence unless it's at
+// least this precise. Low-accuracy (network/cell-tower) fallback positioning
+// can be off by many kilometres in areas with sparse location-service
+// coverage — using a reading that imprecise as "the classroom" would be
+// worse than having none at all, since it silently breaks every scan.
+const GPS_ACCURACY_THRESHOLD_M = 150;
+
 export async function generateQR(sessionId) {
   // Capture lecturer's GPS location when generating QR
   let lecturer_lat = null;
   let lecturer_lng = null;
   try {
     const pos = await getCurrentPosition();
-    lecturer_lat = pos.lat;
-    lecturer_lng = pos.lng;
+    if (pos.accuracy <= GPS_ACCURACY_THRESHOLD_M) {
+      lecturer_lat = pos.lat;
+      lecturer_lng = pos.lng;
+    }
   } catch {
     // GPS unavailable — proceed without location, backend falls back to the room's fixed coords
   }
