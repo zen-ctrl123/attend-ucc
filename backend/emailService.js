@@ -1,42 +1,36 @@
 // ============================================================
 //  AttendUCC — Email Service
 //  backend/emailService.js
-//  Sent via Gmail SMTP — unlike Resend's sandbox sender, a real Gmail
-//  account (with an App Password, not the account password) can send to
-//  any recipient with no allow-list restriction.
+//  Sent via SendGrid's HTTPS API — Render's free tier blocks/restricts
+//  outbound SMTP connections (confirmed: both Gmail SMTP with family:4
+//  and with dns.setDefaultResultOrder("ipv4first") failed identically
+//  with ENETUNREACH / connection timeouts in production). Port 443 isn't
+//  blocked, so an HTTP-based provider is the only reliable option here.
+//  Sender address is verified via SendGrid's "Single Sender Verification"
+//  (a confirmation-link click), not full domain DNS — no domain needed.
 // ============================================================
 
-const nodemailer = require("nodemailer");
+const sgMail = require("@sendgrid/mail");
 
-const GMAIL_USER = process.env.GMAIL_USER;
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+const FROM_EMAIL = process.env.SENDGRID_FROM_EMAIL;
 const APP_NAME    = "AttendUCC";
 const APP_URL     = process.env.APP_URL || "https://attend-ucc.vercel.app";
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-  // Render (and several other hosts) has no outbound IPv6 route, but Node
-  // resolves smtp.gmail.com to an IPv6 address first by default — without
-  // this, every send fails with ENETUNREACH before ever reaching Gmail.
-  family: 4,
-});
 
 // ── Shared email wrapper ──────────────────────────────────
 async function sendEmail({ to, subject, html }) {
   try {
-    await transporter.sendMail({
-      from:    `${APP_NAME} <${GMAIL_USER}>`,
+    await sgMail.send({
       to,
+      from: { email: FROM_EMAIL, name: APP_NAME },
       subject,
       html,
     });
     console.log(`✅ Email sent to ${to} — ${subject}`);
     return true;
   } catch (err) {
-    console.error("Email send failed:", err.message);
+    console.error("Email send failed:", err.response?.body || err.message);
     return false;
   }
 }
