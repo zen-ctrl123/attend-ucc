@@ -1,3 +1,13 @@
+// Render has no outbound IPv6 route, but Node's default DNS resolution can
+// still hand back an IPv6 address for a dual-stack host like smtp.gmail.com
+// ahead of its IPv4 one -- causing ENETUNREACH on the socket connect, not a
+// DNS failure, so nothing upstream even retries. Forcing IPv4-first here
+// fixes it process-wide, regardless of whether an individual library (e.g.
+// nodemailer) correctly threads a per-call "family" option through every
+// one of its own connection paths. Must run before anything that opens an
+// outbound connection is required.
+require("dns").setDefaultResultOrder("ipv4first");
+
 const express    = require("express");
 const cors       = require("cors");
 const bcrypt     = require("bcryptjs");
