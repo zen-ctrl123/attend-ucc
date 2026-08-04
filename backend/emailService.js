@@ -1,26 +1,34 @@
 // ============================================================
 //  AttendUCC — Email Service
 //  backend/emailService.js
-//  Powered by Resend (resend.com)
+//  Sent via Gmail SMTP — unlike Resend's sandbox sender, a real Gmail
+//  account (with an App Password, not the account password) can send to
+//  any recipient with no allow-list restriction.
 // ============================================================
 
-const { Resend } = require("resend");
+const nodemailer = require("nodemailer");
 
-const resend   = new Resend(process.env.RESEND_API_KEY);
-const FROM     = process.env.FROM_EMAIL || "onboarding@resend.dev";
-const APP_NAME = "AttendUCC";
-const APP_URL  = process.env.APP_URL || "https://attend-ucc.vercel.app";
+const GMAIL_USER = process.env.GMAIL_USER;
+const APP_NAME    = "AttendUCC";
+const APP_URL     = process.env.APP_URL || "https://attend-ucc.vercel.app";
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
 
 // ── Shared email wrapper ──────────────────────────────────
 async function sendEmail({ to, subject, html }) {
   try {
-    const { data, error } = await resend.emails.send({
-      from:    `${APP_NAME} <${FROM}>`,
-      to:      [to],
+    await transporter.sendMail({
+      from:    `${APP_NAME} <${GMAIL_USER}>`,
+      to,
       subject,
       html,
     });
-    if (error) { console.error("Email error:", error); return false; }
     console.log(`✅ Email sent to ${to} — ${subject}`);
     return true;
   } catch (err) {
