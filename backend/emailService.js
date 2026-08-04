@@ -18,6 +18,10 @@ const transporter = nodemailer.createTransport({
     user: GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
+  // Render (and several other hosts) has no outbound IPv6 route, but Node
+  // resolves smtp.gmail.com to an IPv6 address first by default — without
+  // this, every send fails with ENETUNREACH before ever reaching Gmail.
+  family: 4,
 });
 
 // ── Shared email wrapper ──────────────────────────────────
